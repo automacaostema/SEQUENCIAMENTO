@@ -2,8 +2,8 @@ import streamlit as st
 import pandas as pd
 from supabase import create_client
 
-st.set_page_config(page_title="Sistema Stema", layout="wide")
-st.title("🚀 Otimizador de Setup - Stema")
+st.set_page_config(page_title="Sistema Stema - PCP", layout="wide")
+st.title("🚀 Sequenciamento e Otimização de Setup - Stema")
 
 supabase = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
 
@@ -15,37 +15,41 @@ def carregar_dados():
 
 df_tempos, df_desenhos = carregar_dados()
 
-uploaded_file = st.file_uploader("Suba a planilha do PCP", type=["xlsx", "csv"])
+uploaded_file = st.file_uploader("Suba a planilha atualizada do PCP", type=["xlsx", "csv"])
 
 if uploaded_file:
     df_pcp = pd.read_excel(uploaded_file)
     
-    # Identifica colunas automaticamente
-    col_data = next((c for c in df_pcp.columns if 'data' in c.lower()), df_pcp.columns[-1])
-    df_pcp['data_limite'] = pd.to_datetime(df_pcp[col_data])
+    # Limpeza de colunas numéricas com os novos nomes
+    df_pcp['tempo unidade'] = pd.to_numeric(df_pcp['tempo unidade'], errors='coerce').fillna(0)
+    df_pcp['quantidade'] = pd.to_numeric(df_pcp['quantidade'], errors='coerce').fillna(0)
+    df_pcp['data de entrega'] = pd.to_datetime(df_pcp['data de entrega'])
     
-    def buscar_ferramental(cod):
-        filtro = df_desenhos[df_desenhos['numero_desenho'].astype(str).str.strip() == str(cod).strip()]
+    def calcular_linha(row):
+        cod = str(row['codigo interno']).strip()
+        filtro = df_desenhos[df_desenhos['numero_desenho'].astype(str).str.strip() == cod]
+        
+        if not filtro.empty:
+            ferramentas = str(filtro['ferramentas_necessarias'].values[0]).lower().split(',')
+            tempo_setup = df_tempos[df_tempos['nome_ferramenta'].str.lower().isin(ferramentas)]['tempo_montagem'].sum()
+            return float(tempo_setup) + (float(row['tempo unidade']) * float(row['quantidade']))
+        return 0.0
+
+    def buscar_ferramental(row):
+        cod = str(row['codigo interno']).strip()
+        filtro = df_desenhos[df_desenhos['numero_desenho'].astype(str).str.strip() == cod]
         return str(filtro['ferramentas_necessarias'].values[0]) if not filtro.empty else "sem_ferramenta"
 
-    # Criar grupo de ferramentas
-    df_pcp['ferramental_grupo'] = df_pcp['numero_desenho'].apply(buscar_ferramental)
+    # Processamento
+    df_pcp['tempo_total_os'] = df_pcp.apply(calcular_linha, axis=1)
+    df_pcp['ferramental_grupo'] = df_pcp.apply(buscar_ferramental, axis=1)
     
-    # ALGORITMO DE OTIMIZAÇÃO:
-    # 1. Agrupa pelo grupo de ferramentas para manter o setup igual por mais tempo
-    # 2. Dentro do grupo, ordena pela data de entrega mais próxima (para não atrasar)
+    # Otimização: Setup primeiro, Data de entrega depois
     df_sequenciado = df_pcp.sort_values(
-        by=['ferramental_grupo', 'data_limite'], 
-        ascending=[True, True]
+        by=['ferramental_grupo', 'data de entrega', 'tempo_total_os'], 
+        ascending=[True, True, True]
     )
     
-    st.success("Sequenciamento otimizado para Setup (Ferramentas Agrupadas)!")
+    st.success("Sequenciamento otimizado com a nova estrutura!")
+    # Exibe a tabela, incluindo a coluna 'n servico' que você pediu
     st.dataframe(df_sequenciado)
-    
-    # Resumo para o operador
-    st.subheader("Resumo por Setup")
-    resumo = df_sequenciado.groupby('ferramental_grupo').agg({
-        'numero_desenho': 'count',
-        'data_limite': 'min'
-    }).rename(columns={'numero_desenho': 'Total de OS'})
-    st.table(resumo)
