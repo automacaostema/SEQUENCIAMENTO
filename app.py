@@ -20,7 +20,7 @@ uploaded_file = st.file_uploader("Suba a planilha do PCP", type=["xlsx", "csv"])
 if uploaded_file:
     df_pcp = pd.read_excel(uploaded_file)
     
-    # Limpeza básica de números
+    # Limpeza básica
     df_pcp['tempo_unitario'] = pd.to_numeric(df_pcp['tempo_unitario'], errors='coerce').fillna(0)
     df_pcp['quantidade'] = pd.to_numeric(df_pcp['quantidade'], errors='coerce').fillna(0)
     
@@ -37,4 +37,7 @@ if uploaded_file:
         cod = str(row['numero_desenho']).strip()
         filtro = df_desenhos[df_desenhos['numero_desenho'].astype(str).str.strip() == cod]
         if not filtro.empty:
-            return str(filtro['fer
+            return str(filtro['ferramentas_necessarias'].values[0])
+        return "sem_ferramenta"
+
+    df_pc
