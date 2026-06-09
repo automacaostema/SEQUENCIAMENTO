@@ -7,55 +7,44 @@ st.title("🚀 Sistema de Sequenciamento - Stema")
 
 supabase = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
 
+# 1. Carregar Dados
 @st.cache_data(ttl=60)
-def carregar_bancos():
-    df_t = pd.DataFrame(supabase.table("tabela_tempos").select("*").execute().data)
-    df_d = pd.DataFrame(supabase.table("tabela_desenhos").select("*").execute().data)
-    return df_t, df_d
+def carregar_dados():
+    tempos = pd.DataFrame(supabase.table("tabela_tempos").select("*").execute().data)
+    desenhos = pd.DataFrame(supabase.table("tabela_desenhos").select("*").execute().data)
+    return tempos, desenhos
 
-df_tempos, df_desenhos = carregar_bancos()
+df_tempos, df_desenhos = carregar_dados()
 
-def converter_tempo(val):
-    try:
-        # Se for tempo (time/datetime), extrai minutos
-        if isinstance(val, (pd.Timestamp, pd.Timedelta)):
-            return float(val.hour * 60 + val.minute)
-        return float(val)
-    except:
+uploaded_file = st.file_uploader("Suba a planilha do PCP", type=["xlsx", "csv"])
+
+if uploaded_file:
+    df_pcp = pd.read_excel(uploaded_file)
+    
+    # 2. LIMPEZA FORÇADA DOS DADOS
+    # Convertemos tempo e quantidade para números, o que for erro vira 0
+    df_pcp['tempo_unitario'] = pd.to_numeric(df_pcp['tempo_unitario'], errors='coerce').fillna(0)
+    df_pcp['quantidade'] = pd.to_numeric(df_pcp['quantidade'], errors='coerce').fillna(0)
+    
+    def calcular_linha(row):
+        cod = str(row['numero_desenho']).strip()
+        
+        # Busca no Supabase
+        filtro = df_desenhos[df_desenhos['numero_desenho'].astype(str).str.strip() == cod]
+        
+        if not filtro.empty:
+            ferramentas = str(filtro['ferramentas_necessarias'].values[0]).lower().split(',')
+            # Soma setup
+            tempo_setup = df_tempos[df_tempos['nome_ferramenta'].str.lower().isin(ferramentas)]['tempo_montagem'].sum()
+            return float(tempo_setup) + (float(row['tempo_unitario']) * float(row['quantidade']))
         return 0.0
 
-uploaded_file = st.file_uploader("Suba a planilha do PCP (Excel/CSV)", type=["xlsx", "csv"])
-
-if uploaded_file is not None:
-    try:
-        df_pcp = pd.read_excel(uploaded_file)
-        
-        # DEBUG: Mostrar o que está sendo lido
-        st.write("--- DEBUG: Verificação ---")
-        st.write("Colunas na planilha:", df_pcp.columns.tolist())
-        st.write("Valores originais de 'tempo_unitario':", df_pcp['tempo_unitario'].head().tolist())
-        
-        # Conversão
-        df_pcp['tempo_unitario_convertido'] = df_pcp['tempo_unitario'].apply(converter_tempo)
-        st.write("Valores convertidos:", df_pcp['tempo_unitario_convertido'].head().tolist())
-        
-        def calcular_sequenciamento(row):
-            desenho_alvo = str(row['numero_desenho']).strip()
-            filtro = df_desenhos[df_desenhos['numero_desenho'].astype(str).str.strip() == desenho_alvo]
-            
-            if not filtro.empty:
-                ferramentas_str = str(filtro['ferramentas_necessarias'].values[0])
-                ferramentas = [f.strip().lower() for f in ferramentas_str.split(',')]
-                df_tempos_clean = df_tempos.copy()
-                df_tempos_clean['nome_ferramenta_lower'] = df_tempos_clean['nome_ferramenta'].str.lower()
-                tempo_setup = df_tempos_clean[df_tempos_clean['nome_ferramenta_lower'].isin(ferramentas)]['tempo_montagem'].sum()
-                
-                return float(tempo_setup) + (float(row['tempo_unitario_convertido']) * float(row['quantidade']))
-            return 0
-
-        df_pcp['tempo_total_os'] = df_pcp.apply(calcular_sequenciamento, axis=1)
-        st.success("Sequenciamento processado!")
-        st.dataframe(df_pcp)
-        
-    except Exception as e:
-        st.error(f"Erro crítico: {e}")
+    # 3. Aplicar cálculo
+    df_pcp['tempo_total_os'] = df_pcp.apply(calcular_linha, axis=1)
+    
+    # 4. ORGANIZAR SEQUÊNCIA (O que faltava)
+    # Aqui o algoritmo ordena do menor tempo para o maior (mais rápido primeiro)
+    df_sequenciado = df_pcp.sort_values(by='tempo_total_os', ascending=True)
+    
+    st.success("Sequenciamento organizado com sucesso!")
+    st.dataframe(df_sequenciado)
