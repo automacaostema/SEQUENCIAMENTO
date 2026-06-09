@@ -1,50 +1,22 @@
-import streamlit as st
-import pandas as pd
-from supabase import create_client
-
-st.set_page_config(page_title="Sistema Stema", layout="wide")
-st.title("🚀 Sistema de Sequenciamento - Stema")
-
-supabase = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
-
-# 1. Carregar Dados
-@st.cache_data(ttl=60)
-def carregar_dados():
-    tempos = pd.DataFrame(supabase.table("tabela_tempos").select("*").execute().data)
-    desenhos = pd.DataFrame(supabase.table("tabela_desenhos").select("*").execute().data)
-    return tempos, desenhos
-
-df_tempos, df_desenhos = carregar_dados()
-
-uploaded_file = st.file_uploader("Suba a planilha do PCP", type=["xlsx", "csv"])
-
-if uploaded_file:
-    df_pcp = pd.read_excel(uploaded_file)
-    
-    # 2. LIMPEZA FORÇADA DOS DADOS
-    # Convertemos tempo e quantidade para números, o que for erro vira 0
-    df_pcp['tempo_unitario'] = pd.to_numeric(df_pcp['tempo_unitario'], errors='coerce').fillna(0)
-    df_pcp['quantidade'] = pd.to_numeric(df_pcp['quantidade'], errors='coerce').fillna(0)
-    
-    def calcular_linha(row):
+# 4. ORGANIZAR SEQUÊNCIA (Algoritmo de Prioridade)
+    # Primeiro, buscamos o ferramental de cada item para agrupar
+    def buscar_ferramental(row):
         cod = str(row['numero_desenho']).strip()
-        
-        # Busca no Supabase
         filtro = df_desenhos[df_desenhos['numero_desenho'].astype(str).str.strip() == cod]
-        
         if not filtro.empty:
-            ferramentas = str(filtro['ferramentas_necessarias'].values[0]).lower().split(',')
-            # Soma setup
-            tempo_setup = df_tempos[df_tempos['nome_ferramenta'].str.lower().isin(ferramentas)]['tempo_montagem'].sum()
-            return float(tempo_setup) + (float(row['tempo_unitario']) * float(row['quantidade']))
-        return 0.0
+            return str(filtro['ferramentas_necessarias'].values[0])
+        return "sem_ferramenta"
 
-    # 3. Aplicar cálculo
-    df_pcp['tempo_total_os'] = df_pcp.apply(calcular_linha, axis=1)
+    df_pcp['ferramental_grupo'] = df_pcp.apply(buscar_ferramental, axis=1)
+
+    # Ordenação Inteligente:
+    # 1. Data de entrega (mais perto primeiro)
+    # 2. Ferramental (agrupa itens iguais)
+    # 3. Tempo total (menor primeiro)
+    df_sequenciado = df_pcp.sort_values(
+        by=['data de entrega', 'ferramental_grupo', 'tempo_total_os'], 
+        ascending=[True, True, True]
+    )
     
-    # 4. ORGANIZAR SEQUÊNCIA (O que faltava)
-    # Aqui o algoritmo ordena do menor tempo para o maior (mais rápido primeiro)
-    df_sequenciado = df_pcp.sort_values(by='tempo_total_os', ascending=True)
-    
-    st.success("Sequenciamento organizado com sucesso!")
+    st.success("Sequenciamento inteligente organizado!")
     st.dataframe(df_sequenciado)
