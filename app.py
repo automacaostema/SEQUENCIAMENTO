@@ -2,47 +2,59 @@ import streamlit as st
 import pandas as pd
 from supabase import create_client
 
-# Conexão
-supabase = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
+# 1. Configuração Inicial
+st.set_page_config(page_title="Sistema Stema", layout="wide")
+st.title("🚀 Sistema de Sequenciamento - Stema")
 
-st.title("Sequenciamento Stema")
-
-# Carrega bancos
+# 2. Conexão com Supabase
 try:
-    # Ajuste: garantindo que pegamos os dados corretamente
-    response_tempos = supabase.table("tabela_tempos").select("*").execute()
-    df_tempos = pd.DataFrame(response_tempos.data)
-    
-    response_desenhos = supabase.table("tabela_desenhos").select("*").execute()
-    df_desenhos = pd.DataFrame(response_desenhos.data)
+    supabase = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
 except Exception as e:
-    st.error(f"Erro ao carregar do Supabase: {e}")
+    st.error(f"Erro ao conectar ao Supabase: {e}")
     st.stop()
 
-uploaded_file = st.file_uploader("Suba a planilha do PCP", type=["xlsx", "csv"])
+# 3. Carregamento dos Bancos
+@st.cache_data
+def carregar_dados():
+    tempos = pd.DataFrame(supabase.table("tabela_tempos").select("*").execute().data)
+    desenhos = pd.DataFrame(supabase.table("tabela_desenhos").select("*").execute().data)
+    return tempos, desenhos
+
+df_tempos, df_desenhos = carregar_dados()
+
+# 4. Interface de Upload
+uploaded_file = st.file_uploader("Upload da Planilha PCP (Excel/CSV)", type=["xlsx", "csv"])
 
 if uploaded_file:
+    # Ler a planilha
     df_pcp = pd.read_excel(uploaded_file)
     
-    def calcular_total(row):
-        # BUSCA usando o nome exato do banco: numero_desenho
-        # Se na planilha do Excel a coluna se chamar 'desenho', usamos row['desenho']
-        filtro = df_desenhos[df_desenhos['numero_desenho'] == row['desenho']]
+    # Função principal de cálculo
+    def calcular_sequenciamento(row):
+        desenho_alvo = str(row['numero_desenho']).strip()
+        
+        # Filtra o banco de desenhos
+        filtro = df_desenhos[df_desenhos['numero_desenho'].astype(str).str.strip() == desenho_alvo]
         
         if not filtro.empty:
-            ferramentas_str = filtro['ferramentas_necessarias'].values[0]
-            ferramentas = [f.strip() for f in str(ferramentas_str).split(',')]
+            # Pega ferramentas e remove espaços
+            ferramentas_str = str(filtro['ferramentas_necessarias'].values[0])
+            ferramentas = [f.strip() for f in ferramentas_str.split(',')]
             
-            # Soma tempos das ferramentas encontradas
+            # Soma os tempos de setup
             tempo_setup = df_tempos[df_tempos['nome_ferramenta'].isin(ferramentas)]['tempo_montagem'].sum()
             
+            # Retorna tempo total (Setup + Produção)
             return tempo_setup + (row['tempo_unitario'] * row['quantidade'])
         return 0
 
-    try:
-        df_pcp['tempo_total_os'] = df_pcp.apply(calcular_total, axis=1)
-        st.success("Sequenciamento concluído!")
-        st.dataframe(df_pcp)
-    except Exception as e:
-        st.error(f"Erro no processamento da linha: {e}")
-        st.write("Colunas detectadas na planilha:", df_pcp.columns.tolist())
+    # Processar
+    df_pcp['tempo_total_os'] = df_pcp.apply(calcular_sequenciamento, axis=1)
+    
+    # Exibir resultados
+    st.subheader("Resultados do Sequenciamento")
+    st.dataframe(df_pcp)
+    
+    # Download
+    csv = df_pcp.to_csv(index=False).encode('utf-8')
+    st.download_button("Baixar Sequenciamento (.csv)", csv, "sequenciamento.csv", "text/csv")
