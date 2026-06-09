@@ -29,16 +29,11 @@ uploaded_file = st.file_uploader("Suba a planilha do PCP", type=["xlsx", "csv"])
 if uploaded_file:
     df_pcp = pd.read_excel(uploaded_file)
     
-    # Normalização
     df_pcp['codigo interno'] = df_pcp['codigo interno'].astype(str).str.strip()
     df_desenhos['numero_desenho'] = df_desenhos['numero_desenho'].astype(str).str.strip()
-
     df_pcp['tempo unidade'] = df_pcp['tempo unidade'].apply(limpar_tempo)
     df_pcp['quantidade'] = pd.to_numeric(df_pcp['quantidade'], errors='coerce').fillna(0)
 
     def calcular_linha(row):
-        cod_pcp = row['codigo interno']
-        filtro = df_desenhos[df_desenhos['numero_desenho'] == cod_pcp]
-        if not filtro.empty:
-            ferramentas = str(filtro['ferramentas_necessarias'].values[0]).lower().split(',')
-            tempo_setup = df_tempos[df_tempos['nome_ferramenta'].str.lower().isin(ferramentas
+        cod = str(row['codigo interno']).strip()
+        filtro = df_desenhos
