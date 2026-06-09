@@ -17,7 +17,7 @@ if uploaded_file:
     
     def calcular_total(row):
         # CORREÇÃO AQUI: Usando o nome da coluna que você confirmou (numero_Desenho)
-        filtro = df_desenhos[df_desenhos['numero_Desenho'] == row['desenho']]
+        filtro = df_desenhos[df_desenhos['numero_desenho'] == row['desenho']]
         
         if not filtro.empty:
             # Pega a string de ferramentas e transforma em lista
