@@ -63,7 +63,7 @@ if uploaded_file:
     resultados = df_pcp['codigo interno'].apply(lambda x: calcular_setup(x))
     df_pcp['setup (min)'], df_pcp['ferramental_grupo'] = zip(*resultados)
     
-    # CORREÇÃO: Ordenação focada primeiro na data de entrega, depois no grupo de ferramenta
+    # Ordenação focada primeiro na data de entrega, depois no grupo de ferramenta
     df_sequenciado = df_pcp.sort_values(by=['data de entrega', 'ferramental_grupo']).copy()
 
     # --- MOTOR DE ALOCAÇÃO DINÂMICA (EFT) ---
@@ -83,43 +83,4 @@ if uploaded_file:
     horas_totais = []
 
     for idx, row in df_sequenciado.iterrows():
-        grupo_maq = "Torno GL 170G" if ("Ø8" in str(row['ferramental_grupo']) or "Ø9" in str(row['ferramental_grupo'])) else "Torno Centur"
-        m1, m2 = f"{grupo_maq} - 1", f"{grupo_maq} - 2"
-        
-        # Simulação no Canal 1
-        start_m1 = max(today, agenda[m1]["data"])
-        setup_m1 = 0.0 if agenda[m1]["ferramental"] == str(row['ferramental_grupo']) else float(row['setup (min)'])
-        minutos_m1 = setup_m1 + (row['tempo unitário (min)'] * row['quantidade'])
-        fim_m1 = calcular_fim_normal(start_m1, minutos_m1)
-        
-        # Simulação no Canal 2
-        start_m2 = max(today, agenda[m2]["data"])
-        setup_m2 = 0.0 if agenda[m2]["ferramental"] == str(row['ferramental_grupo']) else float(row['setup (min)'])
-        minutos_m2 = setup_m2 + (row['tempo unitário (min)'] * row['quantidade'])
-        fim_m2 = calcular_fim_normal(start_m2, minutos_m2)
-        
-        # Escolha por menor tempo de término real
-        if fim_m1 <= fim_m2:
-            maq_escolhida = m1
-            start_date = start_m1
-            end_date = fim_m1
-            setup_atual = setup_m1
-            minutos_finais = minutos_m1
-        else:
-            maq_escolhida = m2
-            start_date = start_m2
-            end_date = fim_m2
-            setup_atual = setup_m2
-            minutos_finais = minutos_m2
-            
-        prazo_limite = pd.to_datetime(row['data de entrega']).date()
-        
-        if end_date <= prazo_limite:
-            status = "✅ No Prazo"
-        else:
-            status = "⚡ No Prazo (Com Sobrecarga)" if prazo_limite >= today else "⚠️ ATRASADO (Prazo Vencido)"
-            
-        agenda[maq_escolhida]["data"] = end_date
-        agenda[maq_escolhida]["ferramental"] = str(row['ferramental_grupo'])
-        
-        maquinas_
+        grupo_maq = "Torno GL 170G" if ("Ø8" in str(row['ferramental_grupo']) or "Ø9" in str(row['ferramental_grupo'])) else "T
