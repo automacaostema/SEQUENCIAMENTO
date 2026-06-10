@@ -74,25 +74,4 @@ if up:
             return 0.0, "sem_ferramenta"
 
         res_setup = df_raw["codigo interno"].apply(calcular_setup)
-        df_raw["setup (min)"], df_raw["ferramental_grupo"] = zip(*res_setup)
-        df_raw = df_raw.sort_values(by=["data de entrega", "ferramental_grupo"]).copy()
-        df_raw["Ordem"] = range(1, len(df_raw) + 1)
-        st.session_state.df_pcp = df_raw
-
-    st.write("### ✏️ Sequenciamento Manual")
-    st.info("Altere os números da coluna 'Ordem' para recalcular.")
-    
-    dis_cols = [c for c in st.session_state.df_pcp.columns if c != "Ordem"]
-    df_editado = st.data_editor(st.session_state.df_pcp, disabled=dis_cols, use_container_width=True)
-    st.session_state.df_pcp = df_editado
-
-    df_seq = df_editado.sort_values(by=["Ordem"]).copy()
-    today = datetime.date.today()
-    m_list = ["Torno GL 170G - 1", "Torno GL 170G - 2", "Torno Centur - 1", "Torno Centur - 2"]
-
-    agenda = {n: {"data": today, "ferramental": ""} for n in m_list}
-
-    maquinas_alocadas, datas_inicio, datas_fim, status_entrega, setups_reais, horas_totais = [], [], [], [], [], []
-
-    for idx, row in df_seq.iterrows():
-        fg_str = str(row
+        df_raw
