@@ -11,7 +11,7 @@ st.title("🚀 Sequenciamento com Setup Inteligente - Stema")
 try:
     supabase = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
 except Exception as e:
-    st.error(f"Erro de conexão com o Supabase (Secrets): {e}")
+    st.error(f"Erro Supabase Secrets: {e}")
 
 # 2. Carga de dados do banco
 @st.cache_data(ttl=60)
@@ -21,16 +21,16 @@ def carregar_dados():
         desenhos_data = supabase.table("tabela_desenhos").select("*").execute().data
         return pd.DataFrame(tempos_data), pd.DataFrame(desenhos_data)
     except Exception as e:
-        st.error(f"Erro ao buscar tabelas do Supabase: {e}")
+        st.error(f"Erro tabelas Supabase: {e}")
         return pd.DataFrame(), pd.DataFrame()
 
 df_tempos, df_desenhos = carregar_dados()
 
-# Validação visual do status do banco de dados
+# Validação do banco
 if df_tempos.empty or df_desenhos.empty:
-    st.warning("⚠️ Banco de dados do Supabase está vazio ou não conectou corretamente.")
+    st.warning("⚠️ Banco do Supabase vazio ou desconectado.")
 else:
-    st.success("✅ Conexão com o Supabase realizada com sucesso!")
+    st.success("✅ Supabase conectado!")
 
 def limpar_tempo(val):
     if hasattr(val, 'hour') and hasattr(val, 'minute') and hasattr(val, 'second'):
@@ -62,4 +62,29 @@ uploaded_file = st.file_uploader("Suba a planilha do PCP", type=["xlsx", "csv"])
 
 if uploaded_file:
     if df_tempos.empty or df_desenhos.empty:
-        st.error("Não é
+        st.error("Erro: Dados do Supabase indisponíveis.")
+    else:
+        try:
+            df_pcp = pd.read_excel(uploaded_file)
+            df_pcp.columns = [c.strip() for c in df_pcp.columns]
+            
+            colunas_obrigatorias = ['codigo interno', 'tempo unidade', 'quantidade', 'data de entrega']
+            colunas_faltantes = [c for c in colunas_obrigatorias if c not in df_pcp.columns]
+            
+            if colunas_faltantes:
+                st.error(f"Planilha sem colunas: {colunas_faltantes}")
+            else:
+                df_pcp['tempo unitário (min)'] = df_pcp['tempo unidade'].apply(limpar_tempo)
+                df_pcp['quantidade'] = pd.to_numeric(df_pcp['quantidade'], errors='coerce').fillna(0)
+
+                def obter_grupo_ferramentas(cod):
+                    filtro = df_desenhos[df_desenhos['numero_desenho'].astype(str).str.strip() == str(cod).strip()]
+                    return str(filtro['ferramentas_necessarias'].values[0]) if not filtro.empty else "sem_ferramenta"
+
+                df_pcp['ferramental_grupo'] = df_pcp['codigo interno'].apply(obter_grupo_ferramentas)
+                df_sequenciado = df_pcp.sort_values(by=['data de entrega', 'ferramental_grupo']).copy()
+
+                today = datetime.date.today()
+                agenda = {
+                    "Torno GL 170G - 1": {"data": today, "ferramentas": set()},
+                    "Torno GL 170G - 2
