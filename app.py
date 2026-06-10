@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 from supabase import create_client
 
-st.set_page_config(page_title="Sistema Stema - PCP", layout="wide")
+st.set_page_config(page_title="Sistema Stema - Profissional", layout="wide")
 st.title("🚀 Sequenciamento e Otimização - Stema")
 
 supabase = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
@@ -28,38 +28,32 @@ uploaded_file = st.file_uploader("Suba a planilha do PCP", type=["xlsx", "csv"])
 
 if uploaded_file:
     df_pcp = pd.read_excel(uploaded_file)
-    # Padroniza nomes de colunas para minúsculo para evitar erro
-    df_pcp.columns = df_pcp.columns.str.lower().str.strip()
     
-    # Processamento dos dados
-    df_pcp['codigo interno'] = df_pcp['codigo interno'].astype(str).str.strip()
-    df_pcp['tempo unidade'] = df_pcp['tempo unidade'].apply(limpar_tempo)
-    df_pcp['quantidade'] = pd.to_numeric(df_pcp['quantidade'], errors='coerce').fillna(0)
+    # Mapeamento robusto: garante que mantemos os nomes originais da sua planilha
+    df_pcp.columns = [c.strip() for c in df_pcp.columns]
+    
+    # Conversão segura mantendo a coluna original
+    df_pcp['tempo_calc'] = df_pcp['tempo unidade'].apply(limpar_tempo)
+    df_pcp['qtd_calc'] = pd.to_numeric(df_pcp['quantidade'], errors='coerce').fillna(0)
 
-    def calcular_linha(row):
-        cod = row['codigo interno']
-        filtro = df_desenhos[df_desenhos['numero_desenho'].astype(str).str.strip() == cod]
+    # Cálculo do setup baseado no Supabase
+    def calcular_setup(cod):
+        filtro = df_desenhos[df_desenhos['numero_desenho'].astype(str).str.strip() == str(cod).strip()]
         if not filtro.empty:
             ferramentas = str(filtro['ferramentas_necessarias'].values[0]).split(',')
-            tempo_setup = 0
-            for f in ferramentas:
-                tempo_setup += df_tempos[df_tempos['nome_ferramenta'].str.lower() == f.strip().lower()]['tempo_montagem'].sum()
-            return float(tempo_setup) + (float(row['tempo unidade']) * float(row['quantidade']))
-        return 0.0
+            total = sum([df_tempos[df_tempos['nome_ferramenta'].str.lower() == f.strip().lower()]['tempo_montagem'].sum() for f in ferramentas])
+            return total, str(filtro['ferramentas_necessarias'].values[0])
+        return 0.0, "sem_ferramenta"
 
-    # Adiciona as colunas necessárias
-    df_pcp['tempo_total_os'] = df_pcp.apply(calcular_linha, axis=1)
+    # Aplica os cálculos sem descartar as colunas originais
+    resultados = df_pcp['codigo interno'].apply(lambda x: calcular_setup(x))
+    df_pcp['setup_total'], df_pcp['ferramental_grupo'] = zip(*resultados)
     
-    # Busca grupo de ferramentas para sequenciamento
-    def pegar_grupo(row):
-        cod = row['codigo interno']
-        filtro = df_desenhos[df_desenhos['numero_desenho'].astype(str).str.strip() == cod]
-        return str(filtro['ferramentas_necessarias'].values[0]) if not filtro.empty else "sem_ferramenta"
+    # Cálculo final do tempo total da OS
+    df_pcp['tempo_total_os'] = df_pcp['setup_total'] + (df_pcp['tempo_calc'] * df_pcp['qtd_calc'])
     
-    df_pcp['ferramental_grupo'] = df_pcp.apply(pegar_grupo, axis=1)
-    
-    # Ordenação profissional
+    # Ordenação profissional mantendo toda a estrutura da planilha
     df_sequenciado = df_pcp.sort_values(by=['ferramental_grupo', 'data de entrega', 'tempo_total_os'])
     
-    st.success("Sequenciamento organizado!")
+    st.success("Sequenciamento completo e colunas preservadas!")
     st.dataframe(df_sequenciado)
