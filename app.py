@@ -5,7 +5,7 @@ import plotly.express as px
 import datetime
 
 st.set_page_config(layout="wide")
-st.title("🚀 Sequenciamento PCP - Setup Inteligente")
+st.title("🚀 Sequenciamento PCP")
 
 try:
     s = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
@@ -17,7 +17,6 @@ except Exception as e:
 
 def para_min(val):
     if isinstance(val, (int, float)): return float(val)
-    if isinstance(val, datetime.time): return val.hour * 60 + val.minute
     if isinstance(val, str):
         try:
             p = [int(x) for x in val.split(':')]
@@ -57,4 +56,8 @@ if up:
     for i in range(len(df)):
         r = df.iloc[i]
         f_s = str(r['ferramental_grupo'])
-        g = "Torno GL 170G" if ("Ø8
+        # Removido o caractere especial Ø
+        g = "Torno GL 170G" if ("8" in f_s or "9" in f_s) else "Torno Centur"
+        maq = f"{g} - 1" if a[f"{g} - 1"]["data"] <= a[f"{g} - 2"]["data"] else f"{g} - 2"
+        f_atuais = set(f.strip().lower() for f in f_s.split(',') if f.strip() and f_s != "sem")
+        f_novas = f_atuais if p_v[maq] else (f_atuais
