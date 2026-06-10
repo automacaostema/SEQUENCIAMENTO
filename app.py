@@ -1,14 +1,13 @@
 import streamlit as st
 import pandas as pd
-import plotly.express as px
 from supabase import create_client
+import plotly.express as px
 
 st.set_page_config(page_title="Sistema Stema - Profissional", layout="wide")
 st.title("🚀 Sequenciamento e Otimização - Stema")
 
 supabase = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
 
-# --- 1. MANTENDO A BASE (Carga e Limpeza) ---
 @st.cache_data(ttl=300)
 def carregar_dados():
     tempos = pd.DataFrame(supabase.table("tabela_tempos").select("*").execute().data)
@@ -26,41 +25,37 @@ def limpar_tempo(val):
     except:
         return 0.0
 
-# --- 2. NOVA LÓGICA DE CAPACIDADE (O que estamos adicionando) ---
-def calcular_maquinas(df_final):
-    # Capacidade Líquida: 450 min/dia (8h45 - 1h15 almoço)
-    CAP_MAQ = 450 
-    
-    # Exemplo de mapeamento (Se precisar mudar, me avise!)
-    # Aqui estamos agrupando pelo nome da máquina que você definir no seu desenho/ferramental
-    maquinas = {
-        "GL170": 2, # 2 máquinas
-        "Centur": 2, # 2 máquinas
-        "GL250": 1  # 1 máquina
-    }
-    
-    # Criaremos uma lógica onde o sistema aloca o tempo_total_os na máquina compatível
-    # (Adicionaremos aqui o cálculo de ocupação no próximo passo)
-    return df_final
-
 uploaded_file = st.file_uploader("Suba a planilha do PCP", type=["xlsx", "csv"])
 
 if uploaded_file:
-    # --- 3. MANTENDO O PROCESSAMENTO ATUAL ---
     df_pcp = pd.read_excel(uploaded_file)
+    
+    # Garantir limpeza das colunas da planilha
     df_pcp['codigo interno'] = df_pcp['codigo interno'].astype(str).str.strip()
     df_pcp['tempo unidade'] = df_pcp['tempo unidade'].apply(limpar_tempo)
+    df_pcp['quantidade'] = pd.to_numeric(df_pcp['quantidade'], errors='coerce').fillna(0)
+
+    # Preparar banco para merge
+    setup_por_desenho = df_desenhos.copy()
+    setup_por_desenho['ferramentas_lista'] = setup_por_desenho['ferramentas_necessarias'].str.split(',')
     
-    # Merge com o Supabase (Profissional)
+    # Calcular tempo de setup total por desenho
+    def somar_setup(lista_ferramentas):
+        if not isinstance(lista_ferramentas, list): return 0
+        total = 0
+        for f in lista_ferramentas:
+            nome = f.strip().lower()
+            tempo = df_tempos[df_tempos['nome_ferramenta'].str.lower() == nome]['tempo_montagem'].sum()
+            total += tempo
+        return total
+
+    df_desenhos['tempo_setup_total'] = setup_por_desenho['ferramentas_lista'].apply(somar_setup)
+
+    # Merge final mantendo todas as colunas originais
     df_final = df_pcp.merge(df_desenhos, left_on='codigo interno', right_on='numero_desenho', how='left')
     
-    # Sequenciamento atual mantido
-    df_sequenciado = df_final.sort_values(by=['ferramentas_necessarias', 'data de entrega'])
+    # Calcular tempo total (Setup + Tempo Unidade * Quantidade)
+    df_final['tempo_total_os'] = df_final['tempo_setup_total'] + (df_final['tempo unidade'] * df_final['quantidade'])
     
-    st.success("Sequenciamento mantido e pronto para o módulo de máquinas!")
-    st.dataframe(df_sequenciado)
-
-    # --- 4. EXIBIÇÃO DO NOVO MÓDULO ---
-    st.divider()
-    st.subheader("📊 Gráfico de Carga das Máquinas")
-    st.info("Pronto para receber a lógica de alocação por máquina.")
+    # Ordenação
+    df_sequenciado = df_final.sort_values(by
