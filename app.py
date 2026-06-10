@@ -52,7 +52,7 @@ if uploaded_file:
     df_pcp['tempo unitário (min)'] = df_pcp['tempo unidade'].apply(limpar_tempo)
     df_pcp['quantidade'] = pd.to_numeric(df_pcp['quantidade'], errors='coerce').fillna(0)
 
-    def obtener_grupo_ferramentas(cod):
+    def obter_grupo_ferramentas(cod):
         filtro = df_desenhos[df_desenhos['numero_desenho'].astype(str).str.strip() == str(cod).strip()]
         return str(filtro['ferramentas_necessarias'].values[0]) if not filtro.empty else "sem_ferramenta"
 
@@ -70,4 +70,16 @@ if uploaded_file:
         "Torno Centur - 2": {"data": today, "ferramentas": set()}
     }
 
-    maquinas_al
+    maquinas_alocadas = []
+    datas_inicio = []
+    datas_fim = []
+    status_entrega = []
+    setups_calculados = []
+    tempos_totais_horas = []
+
+    for idx, row in df_sequenciado.iterrows():
+        ferramentas_str = str(row['ferramental_grupo'])
+        grupo_maq = "Torno GL 170G" if ("Ø8" in ferramentas_str or "Ø9" in ferramentas_str) else "Torno Centur"
+        m1, m2 = f"{grupo_maq} - 1", f"{grupo_maq} - 2"
+        
+        # Escolhe
