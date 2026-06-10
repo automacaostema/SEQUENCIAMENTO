@@ -30,11 +30,11 @@ if uploaded_file:
     df_pcp = pd.read_excel(uploaded_file)
     df_pcp.columns = [c.strip() for c in df_pcp.columns]
     
-    # Cálculos internos
-    df_pcp['tempo_calc'] = df_pcp['tempo unidade'].apply(limpar_tempo)
-    df_pcp['qtd_calc'] = pd.to_numeric(df_pcp['quantidade'], errors='coerce').fillna(0)
+    # 1. Coluna: Tempo Unitário (vindo da planilha)
+    df_pcp['tempo unitário (min)'] = df_pcp['tempo unidade'].apply(limpar_tempo)
+    df_pcp['quantidade'] = pd.to_numeric(df_pcp['quantidade'], errors='coerce').fillna(0)
 
-    # Cálculo Setup
+    # 2. Coluna: Setup Total (Cálculo fixo)
     def calcular_setup(cod):
         filtro = df_desenhos[df_desenhos['numero_desenho'].astype(str).str.strip() == str(cod).strip()]
         if not filtro.empty:
@@ -44,19 +44,14 @@ if uploaded_file:
         return 0.0, "sem_ferramenta"
 
     resultados = df_pcp['codigo interno'].apply(lambda x: calcular_setup(x))
-    df_pcp['setup_minutos'], df_pcp['ferramental_grupo'] = zip(*resultados)
+    df_pcp['setup (min)'], df_pcp['ferramental_grupo'] = zip(*resultados)
     
-    # Cálculo Final: (Setup + (Tempo Unitário * Quantidade)) / 60 para virar HORAS
-    df_pcp['tempo_total_horas'] = (df_pcp['setup_minutos'] + (df_pcp['tempo_calc'] * df_pcp['qtd_calc'])) / 60
-    
-    # Arredondamento para visualização limpa
-    df_pcp['tempo_total_horas'] = df_pcp['tempo_total_horas'].round(2)
+    # 3. Coluna: Tempo Total (Setup + (Unitário * Quantidade))
+    df_pcp['tempo total (horas)'] = (df_pcp['setup (min)'] + (df_pcp['tempo unitário (min)'] * df_pcp['quantidade'])) / 60
+    df_pcp['tempo total (horas)'] = df_pcp['tempo total (horas)'].round(2)
     
     # Ordenação
-    df_sequenciado = df_pcp.sort_values(by=['ferramental_grupo', 'data de entrega', 'tempo_total_horas'])
+    df_sequenciado = df_pcp.sort_values(by=['ferramental_grupo', 'data de entrega', 'tempo total (horas)'])
     
-    # Limpeza da exibição
-    df_exibicao = df_sequenciado.drop(columns=['tempo_calc', 'qtd_calc', 'setup_minutos'])
-    
-    st.success("Tabela com Tempo Total em HORAS disponível:")
-    st.dataframe(df_exibicao)
+    st.success("Tabela processada com Setup e Unitários separados!")
+    st.dataframe(df_sequenciado)
