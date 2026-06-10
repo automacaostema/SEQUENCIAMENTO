@@ -150,11 +150,32 @@ if up:
         df_pcp["ferramental_grupo"],
     ) = zip(*res_setup)
 
-    df_seq = df_pcp.sort_values(
+    # Sugestão automática inicial de ordenação
+    df_pcp = df_pcp.sort_values(
         by=[
             "data de entrega",
             "ferramental_grupo",
         ]
+    ).copy()
+    
+    # Cria a coluna editável para você arrastar/mudar a ordem
+    df_pcp["Ordem"] = range(1, len(df_pcp) + 1)
+
+    st.write("### ✏️ Sequenciamento Manual")
+    st.info("Altere os números da coluna 'Ordem' para reordenar as peças.")
+    
+    # Abre o editor permitindo alterar apenas a coluna Ordem
+    df_editado = st.data_editor(
+        df_pcp,
+        disabled=[
+            c for c in df_pcp.columns if c != "Ordem"
+        ],
+        use_container_width=True,
+    )
+
+    # Aplica a ordenação definida por você
+    df_seq = df_editado.sort_values(
+        by=["Ordem"]
     ).copy()
 
     today = datetime.date.today()
