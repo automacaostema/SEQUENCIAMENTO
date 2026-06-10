@@ -7,94 +7,55 @@ import datetime
 st.set_page_config(page_title="Sistema Stema - PCP", layout="wide")
 st.title("🚀 Sequenciamento com Setup Inteligente - Stema")
 
-# 1. Conexão com o Supabase
+# 1. Conexão
 try:
     supabase = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
 except Exception as e:
-    st.error(f"Erro Supabase Secrets: {e}")
+    st.error(f"Erro Supabase: {e}")
 
-# 2. Carga de dados do banco
+# 2. Dados
 @st.cache_data(ttl=60)
 def carregar_dados():
     try:
-        tempos_data = supabase.table("tabela_tempos").select("*").execute().data
-        desenhos_data = supabase.table("tabela_desenhos").select("*").execute().data
-        return pd.DataFrame(tempos_data), pd.DataFrame(desenhos_data)
-    except Exception as e:
-        st.error(f"Erro tabelas Supabase: {e}")
-        return pd.DataFrame(), pd.DataFrame()
+        t = supabase.table("tabela_tempos").select("*").execute().data
+        d = supabase.table("tabela_desenhos").select("*").execute().data
+        return pd.DataFrame(t), pd.DataFrame(d)
+    except: return pd.DataFrame(), pd.DataFrame()
 
 df_tempos, df_desenhos = carregar_dados()
 
-# Validação do banco
-if df_tempos.empty or df_desenhos.empty:
-    st.warning("⚠️ Banco do Supabase vazio ou desconectado.")
-else:
-    st.success("✅ Supabase conectado!")
-
-def limpar_tempo(val):
-    if hasattr(val, 'hour') and hasattr(val, 'minute') and hasattr(val, 'second'):
-        return val.hour * 60 + val.minute + (val.second / 60.0)
-    if isinstance(val, (int, float)): return float(val)
-    if isinstance(val, str):
+def limpar_tempo(v):
+    if hasattr(v, 'hour'): return v.hour * 60 + v.minute + (v.second / 60.0)
+    if isinstance(v, (int, float)): return float(v)
+    if isinstance(v, str):
         try:
-            parts = [float(x) for x in val.split(':')]
-            if len(parts) == 3: return parts[0] * 60 + parts[1] + (parts[2] / 60.0)
-            elif len(parts) == 2: return parts[0] + (parts[1] / 60.0)
-            elif len(parts) == 1: return parts[0]
+            p = [float(x) for x in v.split(':')]
+            if len(p) == 3: return p[0]*60 + p[1] + (p[2]/60.0)
+            if len(p) == 2: return p[0] + (p[1]/60.0)
+            return p[0]
         except: return 0.0
     return 0.0
 
-def calcular_fim_normal(data_inicio, minutos_totais):
-    data = data_inicio
-    tempo_restante = minutos_totais
-    while tempo_restante > 0:
-        if tempo_restante <= 450:
-            tempo_restante = 0
+def calcular_fim(inicio, mins):
+    data = inicio
+    restante = mins
+    while restante > 0:
+        if restante <= 450: restante = 0
         else:
-            tempo_restante -= 450
+            restante -= 450
             data += datetime.timedelta(days=1)
-            while data.weekday() >= 5:
-                data += datetime.timedelta(days=1)
+            while data.weekday() >= 5: data += datetime.timedelta(days=1)
     return data
 
 uploaded_file = st.file_uploader("Suba a planilha do PCP", type=["xlsx", "csv"])
 
 if uploaded_file:
-    if df_tempos.empty or df_desenhos.empty:
-        st.error("Erro: Dados do Supabase indisponíveis.")
-    else:
-        try:
-            df_pcp = pd.read_excel(uploaded_file)
-            df_pcp.columns = [c.strip() for c in df_pcp.columns]
-            
-            colunas_obrigatorias = ['codigo interno', 'tempo unidade', 'quantidade', 'data de entrega']
-            colunas_faltantes = [c for c in colunas_obrigatorias if c not in df_pcp.columns]
-            
-            if colunas_faltantes:
-                st.error(f"Planilha sem colunas: {colunas_faltantes}")
-            else:
-                df_pcp['tempo unitário (min)'] = df_pcp['tempo unidade'].apply(limpar_tempo)
-                df_pcp['quantidade'] = pd.to_numeric(df_pcp['quantidade'], errors='coerce').fillna(0)
+    try:
+        df = pd.read_excel(uploaded_file)
+        df.columns = [c.strip() for c in df.columns]
+        df['tempo unitário (min)'] = df['tempo unidade'].apply(limpar_tempo)
+        df['quantidade'] = pd.to_numeric(df['quantidade'], errors='coerce').fillna(0)
 
-                def obter_grupo_ferramentas(cod):
-                    filtro = df_desenhos[df_desenhos['numero_desenho'].astype(str).str.strip() == str(cod).strip()]
-                    return str(filtro['ferramentas_necessarias'].values[0]) if not filtro.empty else "sem_ferramenta"
-
-                df_pcp['ferramental_grupo'] = df_pcp['codigo interno'].apply(obter_grupo_ferramentas)
-                df_sequenciado = df_pcp.sort_values(by=['data de entrega', 'ferramental_grupo']).copy()
-
-                today = datetime.date.today()
-                
-                # Definição das máquinas corrigida (sem quebras de linha longas)
-                m_gl1 = "Torno GL 170G - 1"
-                m_gl2 = "Torno GL 170G - 2"
-                m_ct1 = "Torno Centur - 1"
-                m_ct2 = "Torno Centur - 2"
-
-                agenda = {
-                    m_gl1: {"data": today, "ferramentas": set()},
-                    m_gl2: {"data": today, "ferramentas": set()},
-                    m_ct1: {"data": today, "ferramentas": set()},
-                    m_ct2: {"data": today, "ferramentas": set()}
-                }
+        def get_ferramenta(cod):
+            f = df_desenhos[df_desenhos['numero_desenho'].astype(str).str.strip() == str(cod).strip()]
+            return str(f['ferramentas_necessarias'].values[0]) if not f.empty else "sem_ferramenta"
