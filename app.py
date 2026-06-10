@@ -6,7 +6,7 @@ import datetime
 st.set_page_config(layout="wide")
 st.title("🚀 Sequenciamento PCP - Setup Inteligente")
 
-# 1. Configuração
+# 1. Conexão
 try:
     supabase = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
 except Exception as e:
@@ -45,7 +45,7 @@ def calcular_fim(inicio, mins):
             while data.weekday() >= 5: data += datetime.timedelta(days=1)
     return data
 
-# 4. Interface e Processamento
+# 4. Interface
 uploaded_file = st.file_uploader("Suba a planilha do PCP", type=["xlsx", "csv"])
 
 if uploaded_file:
@@ -55,4 +55,4 @@ if uploaded_file:
         df['tempo unitário (min)'] = df['tempo unidade'].apply(limpar_tempo)
         df['quantidade'] = pd.to_numeric(df['quantidade'], errors='coerce').fillna(0)
 
-        def get_ferram
+        def
