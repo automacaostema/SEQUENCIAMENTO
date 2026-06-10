@@ -148,6 +148,6 @@ if uploaded_file:
     
     for i, maq in enumerate(lista_maquinas):
         with abas[i]:
-            df_maq = df_sequenciado[df_sequenciado['Máquina'] == maq].drop(columns=['Máquina', 'tempo total (min)', 'Mês/Ano'])
+           df_maq = df_sequenciado[df_sequenciado['Máquina'] == maq].drop(columns=['Máquina', 'tempo total (min)', 'Mês/Ano'], errors='ignore')
             cols = ['Status', 'Início', 'Fim', 'data de entrega', 'Total (Horas)', 'setup (min)'] + [c for c in df_maq.columns if c not in ['Status', 'Início', 'Fim', 'data de entrega', 'Total (Horas)', 'setup (min)']]
             st.dataframe(df_maq[cols], use_container_width=True)
