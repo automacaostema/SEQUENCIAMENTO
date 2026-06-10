@@ -7,13 +7,27 @@ import datetime
 st.set_page_config(page_title="Sistema Stema - PCP", layout="wide")
 st.title("🚀 Sequenciamento com Setup Inteligente - Stema")
 
-supabase = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
+# Teste de conexão seguro
+try:
+    supabase = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
+except Exception as e:
+    st.error(f"Erro crítico nos Secrets do Supabase: {e}")
 
 @st.cache_data(ttl=300)
 def carregar_dados():
-    tempos = pd.DataFrame(supabase.table("tabela_tempos").select("*").execute().data)
-    desenhos = pd.DataFrame(supabase.table("tabela_desenhos").select("*").execute().data)
-    return tempos, desenhos
+    try:
+        tempos_data = supabase.table("tabela_tempos").select("*").execute().data
+        desenhos_data = supabase.table("tabela_desenhos").select("*").execute().data
+        
+        if not tempos_data or not desenhos_data:
+            st.warning("Atenção: Tabelas retornaram vazias do Supabase.")
+            
+        tempos = pd.DataFrame(tempos_data)
+        desenhos = pd.DataFrame(desenhos_data)
+        return tempos, desenhos
+    except Exception as e:
+        st.error(f"Erro ao puxar dados do Supabase: {e}")
+        return pd.DataFrame(), pd.DataFrame()
 
 df_tempos, df_desenhos = carregar_dados()
 
@@ -45,7 +59,7 @@ def calcular_fim_normal(data_inicio, minutos_totais):
 
 uploaded_file = st.file_uploader("Suba a planilha do PCP", type=["xlsx", "csv"])
 
-if uploaded_file:
+if uploaded_file and not df_tempos.empty and not df_desenhos.empty:
     df_pcp = pd.read_excel(uploaded_file)
     df_pcp.columns = [c.strip() for c in df_pcp.columns]
     
@@ -58,10 +72,8 @@ if uploaded_file:
 
     df_pcp['ferramental_grupo'] = df_pcp['codigo interno'].apply(obter_grupo_ferramentas)
     
-    # Ordenação por Prazo de Entrega e Grupo
     df_sequenciado = df_pcp.sort_values(by=['data de entrega', 'ferramental_grupo']).copy()
 
-    # --- MOTOR DE ALOCAÇÃO COM SETUP REUTILIZÁVEL ---
     today = datetime.date.today()
     agenda = {
         "Torno GL 170G - 1": {"data": today, "ferramentas": set()},
@@ -82,4 +94,5 @@ if uploaded_file:
         grupo_maq = "Torno GL 170G" if ("Ø8" in ferramentas_str or "Ø9" in ferramentas_str) else "Torno Centur"
         m1, m2 = f"{grupo_maq} - 1", f"{grupo_maq} - 2"
         
-        # Escolhe
+        maq_escolhida = m1 if agenda[m1]["data"] <= agenda[m2]["data"] else m2
+        m_agenda = agenda[maq_escolhida]
