@@ -74,4 +74,85 @@ if up:
             return 0.0, "sem_ferramenta"
 
         res_setup = df_raw["codigo interno"].apply(calcular_setup)
-        df_raw
+        df_raw["setup (min)"], df_raw["ferramental_grupo"] = zip(*res_setup)
+        df_raw = df_raw.sort_values(by=["data de entrega", "ferramental_grupo"]).copy()
+        df_raw["Ordem"] = range(1, len(df_raw) + 1)
+        st.session_state.df_pcp = df_raw
+
+    st.write("### ✏️ Sequenciamento Manual")
+    st.info("Altere os números da coluna 'Ordem' para recalcular automaticamente.")
+    
+    dis_cols = [c for c in st.session_state.df_pcp.columns if c != "Ordem"]
+    df_editado = st.data_editor(st.session_state.df_pcp, disabled=dis_cols, use_container_width=True)
+    st.session_state.df_pcp = df_editado
+
+    df_seq = df_editado.sort_values(by=["Ordem"]).copy()
+    today = datetime.date.today()
+    m_list = ["Torno GL 170G - 1", "Torno GL 170G - 2", "Torno Centur - 1", "Torno Centur - 2"]
+
+    agenda = {n: {"data": today, "ferramental": ""} for n in m_list}
+    maquinas_alocadas, datas_inicio, datas_fim, status_entrega, setups_reais, horas_totais = [], [], [], [], [], []
+    lista_itens = df_seq.to_dict("records")
+
+    for r in lista_itens:
+        fg_str = str(r["ferramental_grupo"])
+        is_gl = "8" in fg_str or "9" in fg_str
+        g_maq = "Torno GL 170G" if is_gl else "Torno Centur"
+        m1, m2 = f"{g_maq} - 1", f"{g_maq} - 2"
+
+        st_m1 = max(today, agenda[m1]["data"])
+        set_m1 = 0.0 if agenda[m1]["ferramental"] == fg_str else float(r["setup (min)"])
+        min_m1 = set_m1 + (r["tempo unitário (min)"] * r["quantidade"])
+        fim_m1 = calcular_fim_normal(st_m1, min_m1)
+
+        st_m2 = max(today, agenda[m2]["data"])
+        set_m2 = 0.0 if agenda[m2]["ferramental"] == fg_str else float(r["setup (min)"])
+        min_m2 = set_m2 + (r["tempo unitário (min)"] * r["quantidade"])
+        fim_m2 = calcular_fim_normal(st_m2, min_m2)
+
+        if fim_m1 <= fim_m2:
+            maq_ch, st_date, ed_date, se_at, mi_fi = m1, st_m1, fim_m1, set_m1, min_m1
+        else:
+            maq_ch, st_date, ed_date, se_at, mi_fi = m2, st_m2, fim_m2, set_m2, min_m2
+
+        lim = pd.to_datetime(r["data de entrega"]).date()
+        status = "✅ No Prazo" if ed_date <= lim else ("⚡ No Prazo (Com Sobrecarga)" if lim >= today else "⚠️ ATRASADO (Prazo Vencido)")
+
+        agenda[maq_ch]["data"] = ed_date
+        agenda[maq_ch]["ferramental"] = fg_str
+
+        maquinas_alocadas.append(maq_ch)
+        datas_inicio.append(st_date)
+        datas_fim.append(ed_date)
+        status_entrega.append(status)
+        setups_reais.append(se_at)
+        horas_totais.append(round(mi_fi / 60, 2))
+
+    df_seq["Máquina"] = maquinas_alocadas
+    df_seq["Início"] = datas_inicio
+    df_seq["Fim"] = datas_fim
+    df_seq["Status"] = status_entrega
+    df_seq["setup (min)"] = setups_reais
+    df_seq["Total (Horas)"] = horas_totais
+
+    # --- SESSÃO VISUAL: GRÁFICOS ---
+    df_seq["Mês/Ano"] = pd.to_datetime(df_seq["Fim"]).dt.to_period("M").astype(str)
+    df_mes = df_seq.groupby(["Mês/Ano", "Máquina"])["Total (Horas)"].sum().reset_index()
+    df_mes["Horas Disponíveis"] = 157.5
+    df_mes["Saldo Disponível"] = (df_mes["Horas Disponíveis"] - df_mes["Total (Horas)"]).clip(lower=0)
+
+    st.write("## 📊 Ocupação Real")
+    fig = px.bar(df_mes, x="Mês/Ano", y=["Total (Horas)", "Saldo Disponível"], facet_col="Máquina", facet_col_wrap=2, title="Horas", labels={"value": "Horas", "variable": "Status"}, barmode="stack")
+    st.plotly_chart(fig, use_container_width=True)
+
+    # --- SESSÃO VISUAL: ABAS DAS MÁQUINAS ---
+    st.divider()
+    st.write("## 🗓️ Filas de Trabalho")
+    abas = st.tabs(m_list)
+
+    for i, maq in enumerate(m_list):
+        with abas[i]:
+            df_m = df_seq[df_seq["Máquina"] == maq].drop(columns=["Máquina", "Mês/Ano"])
+            f_cols = ["Status", "Início", "Fim", "data de entrega", "Total (Horas)", "setup (min)"]
+            cols = f_cols + [c for c in df_m.columns if c not in f_cols]
+            st.dataframe(df_m[cols], use_container_width=True)
