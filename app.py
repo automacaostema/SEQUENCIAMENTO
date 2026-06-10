@@ -6,11 +6,13 @@ import datetime
 st.set_page_config(layout="wide")
 st.title("🚀 Sequenciamento PCP")
 
+# 1. Conexão
 try:
     supabase = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
 except Exception as e:
     st.error(f"Erro Supabase: {e}")
 
+# 2. Dados
 @st.cache_data(ttl=60)
 def carregar_dados():
     try:
@@ -22,6 +24,7 @@ def carregar_dados():
 
 df_tempos, df_desenhos = carregar_dados()
 
+# 3. Funções
 def limpar_tempo(v):
     try:
         if isinstance(v, (int, float)): return float(v)
@@ -35,15 +38,14 @@ def calcular_fim(inicio, mins):
     data = inicio
     restante = mins
     while restante > 0:
-        if restante <= 450: 
-            restante = 0
+        if restante <= 450: restante = 0
         else:
             restante -= 450
             data += datetime.timedelta(days=1)
-            while data.weekday() >= 5: 
-                data += datetime.timedelta(days=1)
+            while data.weekday() >= 5: data += datetime.timedelta(days=1)
     return data
 
+# 4. Interface
 uploaded_file = st.file_uploader("Suba a planilha", type=["xlsx", "csv"])
 
 if uploaded_file:
@@ -54,17 +56,4 @@ if uploaded_file:
 
     def get_ferramenta(cod):
         f = df_desenhos[df_desenhos['numero_desenho'].astype(str).str.strip() == str(cod).strip()]
-        if not f.empty:
-            return str(f['ferramentas_necessarias'].values[0])
-        else:
-            return "sem_ferramenta"
-
-    df['ferramental_grupo'] = df['codigo interno'].apply(get_ferramenta)
-    df = df.sort_values(by=['data de entrega', 'ferramental_grupo'])
-
-    today = datetime.date.today()
-    m_names = ["Torno GL 170G - 1", "Torno GL 170G - 2", "Torno Centur - 1", "Torno Centur - 2"]
-    agenda = {name: {"data": today, "ferramentas": set()} for name in m_names}
-
-    res = []
-    for _,
+        return str(f['ferramentas
