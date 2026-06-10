@@ -5,7 +5,7 @@ import plotly.express as px
 import datetime
 
 st.set_page_config(layout="wide")
-st.title("🚀 Sequenciamento PCP - Completo")
+st.title("🚀 Sequenciamento PCP")
 
 # Conexão
 try:
@@ -52,4 +52,9 @@ if up:
     df = df.sort_values(by=['data de entrega', 'ferramental_grupo'])
     
     m_list = ["Torno GL 170G - 1", "Torno GL 170G - 2", "Torno Centur - 1", "Torno Centur - 2"]
-    a = {n: {"data": datetime.date.today(), "ferram
+    
+    # Dicionário simplificado
+    a = {}
+    p_v = {}
+    for n in m_list:
+        a[n] = {"data": datetime.date.
