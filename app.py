@@ -64,8 +64,9 @@ if uploaded_file:
     df_pcp['setup (min)'], df_pcp['ferramental_grupo'] = zip(*resultados)
     df_pcp['tempo total (min)'] = df_pcp['setup (min)'] + (df_pcp['tempo unitário (min)'] * df_pcp['quantidade'])
     
-    # Ordenação focada na data de entrega estrita
-    df_sequenciado = df_pcp.sort_values(by=['data de entrega', 'ferramental_grupo', 'tempo total (min)']).copy()
+    # --- ORDENAÇÃO POR SEMANA E FERRAMENTA ---
+    df_pcp['semana_entrega'] = pd.to_datetime(df_pcp['data de entrega']).dt.isocalendar().week
+    df_sequenciado = df_pcp.sort_values(by=['semana_entrega', 'ferramental_grupo', 'data de entrega']).copy()
 
     # --- MOTOR DE ALOCAÇÃO INDIVIDUAL E SOBRECARGA ---
     today = datetime.date.today()
@@ -134,6 +135,6 @@ if uploaded_file:
     
     for i, maq in enumerate(lista_maquinas):
         with abas[i]:
-            df_maq = df_sequenciado[df_sequenciado['Máquina'] == maq].drop(columns=['Máquina', 'tempo total (min)', 'Mês/Ano'])
+            df_maq = df_sequenciado[df_sequenciado['Máquina'] == maq].drop(columns=['Máquina', 'tempo total (min)', 'Mês/Ano', 'semana_entrega'])
             cols = ['Status', 'Início', 'Fim', 'data de entrega', 'Total (Horas)', 'setup (min)'] + [c for c in df_maq.columns if c not in ['Status', 'Início', 'Fim', 'data de entrega', 'Total (Horas)', 'setup (min)']]
             st.dataframe(df_maq[cols], use_container_width=True)
