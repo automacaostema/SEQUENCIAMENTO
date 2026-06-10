@@ -85,6 +85,16 @@ if uploaded_file:
                 df_sequenciado = df_pcp.sort_values(by=['data de entrega', 'ferramental_grupo']).copy()
 
                 today = datetime.date.today()
+                
+                # Definição das máquinas corrigida (sem quebras de linha longas)
+                m_gl1 = "Torno GL 170G - 1"
+                m_gl2 = "Torno GL 170G - 2"
+                m_ct1 = "Torno Centur - 1"
+                m_ct2 = "Torno Centur - 2"
+
                 agenda = {
-                    "Torno GL 170G - 1": {"data": today, "ferramentas": set()},
-                    "Torno GL 170G - 2
+                    m_gl1: {"data": today, "ferramentas": set()},
+                    m_gl2: {"data": today, "ferramentas": set()},
+                    m_ct1: {"data": today, "ferramentas": set()},
+                    m_ct2: {"data": today, "ferramentas": set()}
+                }
