@@ -93,87 +93,112 @@ up = st.file_uploader(
 )
 
 if up:
-    df_pcp = pd.read_excel(up)
-    df_pcp.columns = [
-        c.strip() for c in df_pcp.columns
-    ]
-
-    df_pcp["tempo unitário (min)"] = (
-        df_pcp["tempo unidade"].apply(
-            limpar_tempo
+    # Memória para não resetar no clique
+    if (
+        "f_name" not in st.session_state
+        or st.session_state.f_name
+        != up.name
+    ):
+        st.session_state.f_name = (
+            up.name
         )
-    )
-    df_pcp["quantidade"] = (
-        pd.to_numeric(
-            df_pcp["quantidade"],
-            errors="coerce",
-        ).fillna(0)
-    )
-
-    def calcular_setup(cod):
-        c_str = str(cod).strip()
-        d_df = df_desenhos
-        mask = (
-            d_df["numero_desenho"]
-            .astype(str)
-            .str.strip()
-            == c_str
-        )
-        filtro = d_df[mask]
-        if not filtro.empty:
-            f_str = str(
-                filtro[
-                    "ferramentas_necessarias"
-                ].values[0]
-            )
-            ferramentas = f_str.split(",")
-            total = 0.0
-            for f in ferramentas:
-                fl = f.strip().lower()
-                t_f = df_tempos
-                m_t = (
-                    t_f["nome_ferramenta"]
-                    .str.lower()
-                    == fl
-                )
-                total += t_f[m_t][
-                    "tempo_montagem"
-                ].sum()
-            return total, f_str
-        return 0.0, "sem_ferramenta"
-
-    res_setup = df_pcp[
-        "codigo interno"
-    ].apply(calcular_setup)
-    (
-        df_pcp["setup (min)"],
-        df_pcp["ferramental_grupo"],
-    ) = zip(*res_setup)
-
-    # Sugestão automática inicial de ordenação
-    df_pcp = df_pcp.sort_values(
-        by=[
-            "data de entrega",
-            "ferramental_grupo",
+        df_raw = pd.read_excel(up)
+        df_raw.columns = [
+            c.strip()
+            for c in df_raw.columns
         ]
-    ).copy()
-    
-    # Cria a coluna editável para você arrastar/mudar a ordem
-    df_pcp["Ordem"] = range(1, len(df_pcp) + 1)
+        df_raw[
+            "tempo unitário (min)"
+        ] = df_raw[
+            "tempo unidade"
+        ].apply(limpar_tempo)
+
+        df_raw["quantidade"] = (
+            pd.to_numeric(
+                df_raw["quantidade"],
+                errors="coerce",
+            ).fillna(0)
+        )
+
+        def calcular_setup(cod):
+            c_str = str(cod).strip()
+            d_df = df_desenhos
+            mask = (
+                d_df["numero_desenho"]
+                .astype(str)
+                .str.strip()
+                == c_str
+            )
+            filtro = d_df[mask]
+            if not filtro.empty:
+                f_str = str(
+                    filtro[
+                        "ferramentas_necessarias"
+                    ].values[0]
+                )
+                ferramentas = (
+                    f_str.split(",")
+                )
+                total = 0.0
+                for f in ferramentas:
+                    fl = f.strip().lower()
+                    t_f = df_tempos
+                    m_t = (
+                        t_f[
+                            "nome_ferramenta"
+                        ].str.lower()
+                        == fl
+                    )
+                    total += t_f[m_t][
+                        "tempo_montagem"
+                    ].sum()
+                return total, f_str
+            return 0.0, "sem_ferramenta"
+
+        res_setup = df_raw[
+            "codigo interno"
+        ].apply(calcular_setup)
+        (
+            df_raw["setup (min)"],
+            df_raw["ferramental_grupo"],
+        ) = zip(*res_setup)
+
+        df_raw = df_raw.sort_values(
+            by=[
+                "data de entrega",
+                "ferramental_grupo",
+            ]
+        ).copy()
+        
+        df_raw["Ordem"] = range(
+            1, len(df_raw) + 1
+        )
+        st.session_state.df_pcp = (
+            df_raw
+        )
 
     st.write("### ✏️ Sequenciamento Manual")
-    st.info("Altere os números da coluna 'Ordem' para reordenar as peças.")
+    st.info(
+        "Altere os números da coluna "
+        "'Ordem' para recalcular."
+    )
     
-    # Abre o editor permitindo alterar apenas a coluna Ordem
+    # Tabela com persistência de dados
     df_editado = st.data_editor(
-        df_pcp,
+        st.session_state.df_pcp,
         disabled=[
-            c for c in df_pcp.columns if c != "Ordem"
+            c
+            for c in st.session_state
+            .df_pcp.columns
+            if c != "Ordem"
         ],
         use_container_width=True,
     )
+    st.session_state.df_pcp = (
+        df_editado
+    )
 
-    # Aplica a ordenação definida por você
+    # Reordena baseado no que você digitou
     df_seq = df_editado.sort_values(
         by=["Ordem"]
     ).copy()
@@ -320,74 +345,3 @@ if up:
         .astype(str)
     )
     grp = df_seq.groupby(
-        ["Mês/Ano", "Máquina"]
-    )
-    df_mes = (
-        grp["Total (Horas)"]
-        .sum()
-        .reset_index()
-    )
-    df_mes["Horas Disponíveis"] = 157.5
-    df_mes["Saldo Disponível"] = (
-        df_mes["Horas Disponíveis"]
-        - df_mes["Total (Horas)"]
-    ).clip(lower=0)
-
-    st.write(
-        "## 📊 Ocupação Real"
-    )
-    fig = px.bar(
-        df_mes,
-        x="Mês/Ano",
-        y=[
-            "Total (Horas)",
-            "Saldo Disponível",
-        ],
-        facet_col="Máquina",
-        facet_col_wrap=2,
-        title="Horas",
-        labels={
-            "value": "Horas",
-            "variable": "Status",
-        },
-        barmode="stack",
-    )
-    st.plotly_chart(
-        fig, use_container_width=True
-    )
-
-    st.divider()
-    st.write(
-        "## 🗓️ Filas de Trabalho"
-    )
-
-    abas = st.tabs(m_list)
-
-    for i, maq in enumerate(m_list):
-        with abas[i]:
-            mask_m = (
-                df_seq["Máquina"] == maq
-            )
-            df_m = df_seq[mask_m].drop(
-                columns=[
-                    "Máquina",
-                    "Mês/Ano",
-                ]
-            )
-            f_cols = [
-                "Status",
-                "Início",
-                "Fim",
-                "data de entrega",
-                "Total (Horas)",
-                "setup (min)",
-            ]
-            o_cols = []
-            for c in df_m.columns:
-                if c not in f_cols:
-                    o_cols.append(c)
-            cols = f_cols + o_cols
-            st.dataframe(
-                df_m[cols],
-                use_container_width=True,
-            )
