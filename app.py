@@ -5,7 +5,7 @@ import plotly.express as px
 import datetime
 
 st.set_page_config(page_title="Sistema Stema - PCP", layout="wide")
-st.title("🚀 Sequenciamento Otimizado (Sem Atraso Cascata) - Stema")
+st.title("🚀 Sequenciamento Otimizado (Setup & Carga Balanceada) - Stema")
 
 supabase = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
 
@@ -62,13 +62,11 @@ if uploaded_file:
 
     resultados = df_pcp['codigo interno'].apply(lambda x: calcular_setup(x))
     df_pcp['setup (min)'], df_pcp['ferramental_grupo'] = zip(*resultados)
-    df_pcp['tempo total (min)'] = df_pcp['setup (min)'] + (df_pcp['tempo unitário (min)'] * df_pcp['quantidade'])
     
-    # Ordenação por semana e similaridade de ferramenta
-    df_pcp['semana_entrega'] = pd.to_datetime(df_pcp['data de entrega']).dt.isocalendar().week
-    df_sequenciado = df_pcp.sort_values(by=['semana_entrega', 'ferramental_grupo', 'data de entrega']).copy()
+    # Ordenação Global por Ferramental e Prazo (traz peças iguais de datas futuras para a frente)
+    df_sequenciado = df_pcp.sort_values(by=['ferramental_grupo', 'data de entrega']).copy()
 
-    # --- MOTOR DE ALOCAÇÃO INTELIGENTE (PREFERÊNCIA POR FERRAMENTAL) ---
+    # --- MOTOR DE ALOCAÇÃO DINÂMICA POR MENOR TEMPO DE TÉRMINO ---
     today = datetime.date.today()
     agenda = {
         "Torno GL 170G - 1": {"data": today, "ferramental": ""},
@@ -88,34 +86,41 @@ if uploaded_file:
         grupo_maq = "Torno GL 170G" if ("Ø8" in str(row['ferramental_grupo']) or "Ø9" in str(row['ferramental_grupo'])) else "Torno Centur"
         m1, m2 = f"{grupo_maq} - 1", f"{grupo_maq} - 2"
         
-        # Se uma das duas máquinas já está com essa ferramenta instalada, manda para ela e ZERA o setup
-        if agenda[m1]["ferramental"] == str(row['ferramental_grupo']) and agenda[m1]["ferramental"] != "sem_ferramenta":
+        # Simula o término no Canal 1
+        start_m1 = max(today, agenda[m1]["data"])
+        setup_m1 = 0.0 if agenda[m1]["ferramental"] == str(row['ferramental_grupo']) else float(row['setup (min)'])
+        minutos_m1 = setup_m1 + (row['tempo unitário (min)'] * row['quantidade'])
+        fim_m1 = calcular_fim_normal(start_m1, minutos_m1)
+        
+        # Simula o término no Canal 2
+        start_m2 = max(today, agenda[m2]["data"])
+        setup_m2 = 0.0 if agenda[m2]["ferramental"] == str(row['ferramental_grupo']) else float(row['setup (min)'])
+        minutos_m2 = setup_m2 + (row['tempo unitário (min)'] * row['quantidade'])
+        fim_m2 = calcular_fim_normal(start_m2, minutos_m2)
+        
+        # Decisão inteligente: Escolhe quem entrega MAIS CEDO real do simulado
+        if fim_m1 <= fim_m2:
             maq_escolhida = m1
-            setup_atual = 0.0
-        elif agenda[m2]["ferramental"] == str(row['ferramental_grupo']) and agenda[m2]["ferramental"] != "sem_ferramenta":
-            maq_escolhida = m2
-            setup_atual = 0.0
+            start_date = start_m1
+            end_date = fim_m1
+            setup_atual = setup_m1
+            minutos_finais = minutos_m1
         else:
-            # Se nenhuma tem a ferramenta pronta, escolhe a que terminar mais cedo
-            maq_escolhida = m1 if agenda[m1]["data"] <= agenda[m2]["data"] else m2
-            setup_atual = float(row['setup (min)'])
+            maq_escolhida = m2
+            start_date = start_m2
+            end_date = fim_m2
+            setup_atual = setup_m2
+            minutos_finais = minutos_m2
             
-        start_date = max(today, agenda[maq_escolhida]["data"])
         prazo_limite = pd.to_datetime(row['data de entrega']).date()
         
-        # Recalcula o tempo dinamicamente descontando o setup se reaproveitado
-        minutos = setup_atual + (row['tempo unitário (min)'] * row['quantidade'])
-        fim_normal = calcular_fim_normal(start_date, minutos)
-        
-        if fim_normal <= prazo_limite:
-            end_date = fim_normal
+        if end_date <= prazo_limite:
             status = "✅ No Prazo"
-            agenda[maq_escolhida]["data"] = end_date
         else:
-            end_date = max(today, prazo_limite)
             status = "⚡ No Prazo (Com Sobrecarga)" if prazo_limite >= today else "⚠️ ATRASADO (Prazo Vencido)"
-            agenda[maq_escolhida]["data"] = end_date
             
+        # Atualiza a linha do tempo real da máquina sem resetar retroativamente
+        agenda[maq_escolhida]["data"] = end_date
         agenda[maq_escolhida]["ferramental"] = str(row['ferramental_grupo'])
         
         maquinas_alocadas.append(maq_escolhida)
@@ -123,7 +128,7 @@ if uploaded_file:
         datas_fim.append(end_date)
         status_entrega.append(status)
         setups_reais.append(setup_atual)
-        horas_totais.append(round(minutos / 60, 2))
+        horas_totais.append(round(minutos_finais / 60, 2))
 
     df_sequenciado['Máquina'] = maquinas_alocadas
     df_sequenciado['Início'] = datas_inicio
@@ -132,7 +137,7 @@ if uploaded_file:
     df_sequenciado['setup (min)'] = setups_reais
     df_sequenciado['Total (Horas)'] = horas_totais
 
-    # --- GRÁFICO MENSAL RECALCULADO ---
+    # --- GRÁFICO MENSAL ---
     df_sequenciado['Mês/Ano'] = pd.to_datetime(df_sequenciado['Fim']).dt.to_period('M').astype(str)
     df_mes = df_sequenciado.groupby(['Mês/Ano', 'Máquina'])['Total (Horas)'].sum().reset_index()
     df_mes['Horas Disponíveis'] = 157.5
@@ -153,6 +158,6 @@ if uploaded_file:
     
     for i, maq in enumerate(lista_maquinas):
         with abas[i]:
-            df_maq = df_sequenciado[df_sequenciado['Máquina'] == maq].drop(columns=['Máquina', 'tempo total (min)', 'Mês/Ano', 'semana_entrega'])
+            df_maq = df_sequenciado[df_sequenciado['Máquina'] == maq].drop(columns=['Máquina', 'Mês/Ano'])
             cols = ['Status', 'Início', 'Fim', 'data de entrega', 'Total (Horas)', 'setup (min)'] + [c for c in df_maq.columns if c not in ['Status', 'Início', 'Fim', 'data de entrega', 'Total (Horas)', 'setup (min)']]
             st.dataframe(df_maq[cols], use_container_width=True)
