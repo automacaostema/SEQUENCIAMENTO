@@ -63,4 +63,34 @@ if uploaded_file:
         g = "Torno GL 170G" if ("Ø8" in f_s or "Ø9" in f_s) else "Torno Centur"
         maq = f"{g} - 1" if agenda[f"{g} - 1"]["data"] <= agenda[f"{g} - 2"]["data"] else f"{g} - 2"
         
-        f_atuais = set(f.strip().lower() for f in f_s.split(',') if f.strip
+        # Criação do set simplificada para evitar erro de sintaxe
+        f_list = [f.strip().lower() for f in f_s.split(',') if f.strip() and f_s != "sem"]
+        f_atuais = set(f_list)
+        
+        if primeira_vez[maq]:
+            f_novas = f_atuais
+            primeira_vez[maq] = False
+        else:
+            f_novas = f_atuais - agenda[maq]["ferramentas"]
+            
+        setup = sum([t_df[t_df['nome_ferramenta'].str.lower()==f]['tempo_montagem'].sum() for f in f_novas]) if f_novas else 0
+        
+        t_unit = para_minutos(r['tempo unidade'])
+        total_m = setup + (t_unit * float(r['quantidade']))
+        
+        fim = calcular_fim(agenda[maq]["data"], total_m)
+        agenda[maq].update({"data": fim, "ferramentas": f_atuais})
+        
+        res.append({
+            "Máquina": maq, "Início": agenda[maq]["data"], "Fim": fim, 
+            "Status": "✅ No Prazo" if fim <= pd.to_datetime(r['data de entrega']).date() else "⚠️ ATRASADO",
+            "Total (Horas)": round(total_m/60, 2), "setup (min)": setup, **r
+        })
+    
+    df_final = pd.DataFrame(res)
+    
+    # 4. Gráfico e Abas
+    st.write("## 📊 Ocupação Real")
+    df_mes = df_final.groupby(['Máquina', 'Status'])['Total (Horas)'].sum().reset_index()
+    fig = px.bar(df_mes, x='Máquina', y='Total (Horas)', color='Status', barmode='group')
+    st.plotly_chart(fig, use_container_width=True
