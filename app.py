@@ -42,20 +42,14 @@ up = st.file_uploader("Upload Planilha")
 if up:
     df = pd.read_excel(up)
     df.columns = [c.strip() for c in df.columns]
-    df['ferramental_grupo'] = df['codigo interno'].apply(lambda cod: str(d_df[d_df['numero_desenho'].astype(str).str.strip()==str(cod).strip()]['ferramentas_necessarias'].values[0]) if not d_df[d_df['numero_desenho'].astype(str).str.strip()==str(cod).strip()].empty else "sem")
+    
+    def get_f(cod):
+        mask = d_df['numero_desenho'].astype(str).str.strip() == str(cod).strip()
+        f = d_df[mask]
+        return str(f['ferramentas_necessarias'].values[0]) if not f.empty else "sem"
+    
+    df['ferramental_grupo'] = df['codigo interno'].apply(get_f)
     df = df.sort_values(by=['data de entrega', 'ferramental_grupo'])
     
     m_list = ["Torno GL 170G - 1", "Torno GL 170G - 2", "Torno Centur - 1", "Torno Centur - 2"]
-    a = {n: {"data": datetime.date.today(), "ferramentas": set()} for n in m_list}
-    p_v = {n: True for n in m_list}
-    res = []
-    
-    for i in range(len(df)):
-        r = df.iloc[i]
-        f_s = str(r['ferramental_grupo'])
-        g = "Torno GL 170G" if ("8" in f_s or "9" in f_s) else "Torno Centur"
-        maq = f"{g} - 1" if a[f"{g} - 1"]["data"] <= a[f"{g} - 2"]["data"] else f"{g} - 2"
-        f_atuais = set(f.strip().lower() for f in f_s.split(',') if f.strip() and f_s != "sem")
-        f_novas = f_atuais if p_v[maq] else (f_atuais - a[maq]["ferramentas"])
-        p_v[maq] = False
-        setup = sum([t_df[t_df['nome_ferramenta'].str.lower()==f]['tempo_montagem'].sum() for f in f_nov
+    a = {n: {"data": datetime.date.today(), "ferram
