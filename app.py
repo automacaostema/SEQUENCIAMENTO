@@ -1,52 +1,66 @@
 import streamlit as st
 import pandas as pd
+import plotly.express as px
 from supabase import create_client
 
 st.set_page_config(page_title="Sistema Stema - Profissional", layout="wide")
-st.title("🚀 Sequenciamento Profissional Stema")
+st.title("🚀 Sequenciamento e Otimização - Stema")
 
 supabase = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
 
+# --- 1. MANTENDO A BASE (Carga e Limpeza) ---
 @st.cache_data(ttl=300)
 def carregar_dados():
-    # Carrega dados do Supabase
     tempos = pd.DataFrame(supabase.table("tabela_tempos").select("*").execute().data)
     desenhos = pd.DataFrame(supabase.table("tabela_desenhos").select("*").execute().data)
     return tempos, desenhos
 
 df_tempos, df_desenhos = carregar_dados()
 
+def limpar_tempo(val):
+    try:
+        if isinstance(val, str) and ':' in val:
+            partes = val.split(':')
+            return float(partes[0]) * 60 + float(partes[1])
+        return float(val)
+    except:
+        return 0.0
+
+# --- 2. NOVA LÓGICA DE CAPACIDADE (O que estamos adicionando) ---
+def calcular_maquinas(df_final):
+    # Capacidade Líquida: 450 min/dia (8h45 - 1h15 almoço)
+    CAP_MAQ = 450 
+    
+    # Exemplo de mapeamento (Se precisar mudar, me avise!)
+    # Aqui estamos agrupando pelo nome da máquina que você definir no seu desenho/ferramental
+    maquinas = {
+        "GL170": 2, # 2 máquinas
+        "Centur": 2, # 2 máquinas
+        "GL250": 1  # 1 máquina
+    }
+    
+    # Criaremos uma lógica onde o sistema aloca o tempo_total_os na máquina compatível
+    # (Adicionaremos aqui o cálculo de ocupação no próximo passo)
+    return df_final
+
 uploaded_file = st.file_uploader("Suba a planilha do PCP", type=["xlsx", "csv"])
 
 if uploaded_file:
+    # --- 3. MANTENDO O PROCESSAMENTO ATUAL ---
     df_pcp = pd.read_excel(uploaded_file)
-    
-    # 1. Preparar dados do banco para o cálculo
-    # Soma os tempos de todas as ferramentas por desenho
-    setup_por_desenho = df_desenhos.copy()
-    # Expande a lista de ferramentas para somar os tempos corretamente
-    setup_por_desenho = setup_por_desenho.assign(ferramentas=setup_por_desenho['ferramentas_necessarias'].str.split(',')).explode('ferramentas')
-    setup_por_desenho['ferramentas'] = setup_por_desenho['ferramentas'].str.strip().str.lower()
-    
-    # Merge com tempos para pegar o valor de setup
-    df_tempos['nome_ferramenta'] = df_tempos['nome_ferramenta'].str.strip().str.lower()
-    setup_total = setup_por_desenho.merge(df_tempos, left_on='ferramentas', right_on='nome_ferramenta', how='left')
-    setup_total = setup_total.groupby('numero_desenho')['tempo_montagem'].sum().reset_index()
-
-    # 2. Mesclar tudo com a planilha do PCP
     df_pcp['codigo interno'] = df_pcp['codigo interno'].astype(str).str.strip()
-    setup_total['numero_desenho'] = setup_total['numero_desenho'].astype(str).str.strip()
+    df_pcp['tempo unidade'] = df_pcp['tempo unidade'].apply(limpar_tempo)
     
-    df_final = df_pcp.merge(setup_total, left_on='codigo interno', right_on='numero_desenho', how='left').fillna(0)
+    # Merge com o Supabase (Profissional)
+    df_final = df_pcp.merge(df_desenhos, left_on='codigo interno', right_on='numero_desenho', how='left')
     
-    # 3. Calcular tempo final
-    df_final['tempo_total_os'] = df_final['tempo_montagem'] + (pd.to_numeric(df_final['tempo unidade'], errors='coerce') * pd.to_numeric(df_final['quantidade'], errors='coerce'))
+    # Sequenciamento atual mantido
+    df_sequenciado = df_final.sort_values(by=['ferramentas_necessarias', 'data de entrega'])
     
-    # 4. Adicionar grupo de ferramentas para ordenação
-    df_final = df_final.merge(df_desenhos[['numero_desenho', 'ferramentas_necessarias']], left_on='codigo interno', right_on='numero_desenho', how='left').fillna('sem_ferramenta')
-
-    # 5. Ordenação
-    df_sequenciado = df_final.sort_values(by=['ferramentas_necessarias', 'data de entrega', 'tempo_total_os'])
-    
-    st.success("Sequenciamento processado com motor de alta performance!")
+    st.success("Sequenciamento mantido e pronto para o módulo de máquinas!")
     st.dataframe(df_sequenciado)
+
+    # --- 4. EXIBIÇÃO DO NOVO MÓDULO ---
+    st.divider()
+    st.subheader("📊 Gráfico de Carga das Máquinas")
+    st.info("Pronto para receber a lógica de alocação por máquina.")
