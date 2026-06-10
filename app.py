@@ -9,8 +9,8 @@ st.title("🚀 Sequenciamento PCP")
 # 1. Conexão
 try:
     supabase = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
-except Exception as e:
-    st.error(f"Erro Supabase: {e}")
+except:
+    st.error("Erro Supabase")
 
 # 2. Dados
 @st.cache_data(ttl=60)
@@ -38,14 +38,16 @@ def calcular_fim(inicio, mins):
     data = inicio
     restante = mins
     while restante > 0:
-        if restante <= 450: restante = 0
+        if restante <= 450: 
+            restante = 0
         else:
             restante -= 450
             data += datetime.timedelta(days=1)
-            while data.weekday() >= 5: data += datetime.timedelta(days=1)
+            while data.weekday() >= 5: 
+                data += datetime.timedelta(days=1)
     return data
 
-# 4. Interface
+# 4. Processamento
 uploaded_file = st.file_uploader("Suba a planilha", type=["xlsx", "csv"])
 
 if uploaded_file:
@@ -55,5 +57,7 @@ if uploaded_file:
     df['quantidade'] = pd.to_numeric(df['quantidade'], errors='coerce').fillna(0)
 
     def get_ferramenta(cod):
-        f = df_desenhos[df_desenhos['numero_desenho'].astype(str).str.strip() == str(cod).strip()]
-        return str(f['ferramentas
+        mask = df_desenhos['numero_desenho'].astype(str).str.strip() == str(cod).strip()
+        f = df_desenhos[mask]
+        if not f.empty:
+            return str(f['fer
