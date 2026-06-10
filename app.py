@@ -5,7 +5,7 @@ import plotly.express as px
 import datetime
 
 st.set_page_config(page_title="Sistema Stema - PCP", layout="wide")
-st.title("🚀 Sequenciamento e Fila por Máquina - Stema")
+st.title("🚀 Sequenciamento Otimizado (Sem Atraso Cascata) - Stema")
 
 supabase = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
 
@@ -30,6 +30,19 @@ def limpar_tempo(val):
         except: return 0.0
     return 0.0
 
+def calcular_fim_normal(data_inicio, minutos_totais):
+    data = data_inicio
+    tempo_restante = minutos_totais
+    while tempo_restante > 0:
+        if tempo_restante <= 450:
+            tempo_restante = 0
+        else:
+            tempo_restante -= 450
+            data += datetime.timedelta(days=1)
+            while data.weekday() >= 5:
+                data += datetime.timedelta(days=1)
+    return data
+
 uploaded_file = st.file_uploader("Suba a planilha do PCP", type=["xlsx", "csv"])
 
 if uploaded_file:
@@ -51,89 +64,76 @@ if uploaded_file:
     df_pcp['setup (min)'], df_pcp['ferramental_grupo'] = zip(*resultados)
     df_pcp['tempo total (min)'] = df_pcp['setup (min)'] + (df_pcp['tempo unitário (min)'] * df_pcp['quantidade'])
     
-    # Ordenação: Foco no Prazo de Entrega primeiro, depois Similaridade
+    # Ordenação focada na data de entrega estrita
     df_sequenciado = df_pcp.sort_values(by=['data de entrega', 'ferramental_grupo', 'tempo total (min)']).copy()
 
-    # --- SIMULAÇÃO DA FILA DE TRABALHO DIÁRIA ---
-    def proximo_dia_util(data):
-        data += datetime.timedelta(days=1)
-        while data.weekday() >= 5:
-            data += datetime.timedelta(days=1)
-        return data
-
-    MINUTOS_DIARIOS_POR_MAQUINA = 450
-    
+    # --- MOTOR DE ALOCAÇÃO INDIVIDUAL E SOBRECARGA ---
+    today = datetime.date.today()
     agenda = {
-        "Torno GL 170G - 1": {"data": datetime.date.today(), "min": 0},
-        "Torno GL 170G - 2": {"data": datetime.date.today(), "min": 0},
-        "Torno Centur - 1": {"data": datetime.date.today(), "min": 0},
-        "Torno Centur - 2": {"data": datetime.date.today(), "min": 0}
+        "Torno GL 170G - 1": today, "Torno GL 170G - 2": today,
+        "Torno Centur - 1": today, "Torno Centur - 2": today
     }
 
     maquinas_alocadas = []
     datas_inicio = []
     datas_fim = []
+    status_entrega = []
 
     for idx, row in df_sequenciado.iterrows():
         grupo_maq = "Torno GL 170G" if ("Ø8" in str(row['ferramental_grupo']) or "Ø9" in str(row['ferramental_grupo'])) else "Torno Centur"
         m1, m2 = f"{grupo_maq} - 1", f"{grupo_maq} - 2"
         
-        # Aloca na máquina que estiver livre mais cedo
-        maq_escolhida = m1 if (agenda[m1]["data"], agenda[m1]["min"]) <= (agenda[m2]["data"], agenda[m2]["min"]) else m2
-        m_agenda = agenda[maq_escolhida]
+        # Escolhe a máquina com maior disponibilidade atual
+        maq_escolhida = m1 if agenda[m1] <= agenda[m2] else m2
+        start_date = max(today, agenda[maq_escolhida])
         
+        prazo_limite = pd.to_datetime(row['data de entrega']).date()
+        minutos = row['tempo total (min)']
+        
+        fim_normal = calcular_fim_normal(start_date, minutos)
+        
+        if fim_normal <= prazo_limite:
+            end_date = fim_normal
+            status = "✅ No Prazo"
+            agenda[maq_escolhida] = end_date
+        else:
+            # Força a entrega absorvendo a sobrecarga para não atrasar os próximos
+            end_date = max(today, prazo_limite)
+            status = "⚡ No Prazo (Com Sobrecarga)" if prazo_limite >= today else "⚠️ ATRASADO (Prazo Vencido)"
+            agenda[maq_escolhida] = end_date
+            
         maquinas_alocadas.append(maq_escolhida)
-        datas_inicio.append(m_agenda["data"])
-        
-        tempo_restante = row['tempo total (min)']
-        while tempo_restante > 0:
-            livre_hoje = MINUTOS_DIARIOS_POR_MAQUINA - m_agenda["min"]
-            if tempo_restante <= livre_hoje:
-                m_agenda["min"] += tempo_restante
-                tempo_restante = 0
-            else:
-                tempo_restante -= livre_hoje
-                m_agenda["data"] = proximo_dia_util(m_agenda["data"])
-                m_agenda["min"] = 0
-                
-        datas_fim.append(m_agenda["data"])
-        if m_agenda["min"] == MINUTOS_DIARIOS_POR_MAQUINA:
-            m_agenda["data"] = proximo_dia_util(m_agenda["data"])
-            m_agenda["min"] = 0
+        datas_inicio.append(start_date)
+        datas_fim.append(end_date)
+        status_entrega.append(status)
 
     df_sequenciado['Máquina'] = maquinas_alocadas
     df_sequenciado['Início'] = datas_inicio
     df_sequenciado['Fim'] = datas_fim
+    df_sequenciado['Status'] = status_entrega
     df_sequenciado['Total (Horas)'] = (df_sequenciado['tempo total (min)'] / 60).round(2)
 
-    df_sequenciado['Status'] = df_sequenciado.apply(lambda r: "✅ No Prazo" if r['Fim'] <= pd.to_datetime(r['data de entrega']).date() else "⚠️ ATRASADO", axis=1)
-
-    # --- GRÁFICOS MENSAIS ---
+    # --- GRÁFICO MENSAL RECALCULADO ---
     df_sequenciado['Mês/Ano'] = pd.to_datetime(df_sequenciado['Fim']).dt.to_period('M').astype(str)
     df_mes = df_sequenciado.groupby(['Mês/Ano', 'Máquina'])['Total (Horas)'].sum().reset_index()
     df_mes['Horas Disponíveis'] = 157.5
     df_mes['Saldo Disponível'] = (df_mes['Horas Disponíveis'] - df_mes['Total (Horas)']).clip(lower=0)
 
-    st.write("## 📊 Ocupação Mensal do Grupo")
+    st.write("## 📊 Ocupação Real Mensal por Máquina")
     fig = px.bar(df_mes, x='Mês/Ano', y=['Total (Horas)', 'Saldo Disponível'], 
-                 facet_col='Máquina', facet_col_wrap=2, title="Análise de Carga Horária",
+                 facet_col='Máquina', facet_col_wrap=2, title="Distribuição de Horas",
                  labels={'value': 'Horas', 'variable': 'Status'}, barmode='stack')
     st.plotly_chart(fig, use_container_width=True)
 
-    # --- SEPARAÇÃO VISUAL POR MÁQUINA ---
+    # --- SEPARAÇÃO POR ABAS DE MÁQUINAS ---
     st.divider()
-    st.write("## 🗓️ Filas de Trabalho Individuais")
+    st.write("## 🗓️ Filas de Trabalho Individuais por Máquina")
     
-    # Criando abas para separar cada máquina perfeitamente
     lista_maquinas = ["Torno GL 170G - 1", "Torno GL 170G - 2", "Torno Centur - 1", "Torno Centur - 2"]
     abas = st.tabs(lista_maquinas)
     
     for i, maq in enumerate(lista_maquinas):
         with abas[i]:
             df_maq = df_sequenciado[df_sequenciado['Máquina'] == maq].drop(columns=['Máquina', 'tempo total (min)', 'Mês/Ano'])
-            
-            # Organização visual das colunas na tabela
             cols = ['Status', 'Início', 'Fim', 'data de entrega', 'Total (Horas)', 'setup (min)'] + [c for c in df_maq.columns if c not in ['Status', 'Início', 'Fim', 'data de entrega', 'Total (Horas)', 'setup (min)']]
-            
-            st.write(f"### Fila Cronológica de Fabricação")
             st.dataframe(df_maq[cols], use_container_width=True)
