@@ -5,7 +5,7 @@ import plotly.express as px
 import datetime
 
 st.set_page_config(page_title="Sistema Stema - PCP", layout="wide")
-st.title("🚀 Sequenciamento Otimizado (Setup & Carga Balanceada) - Stema")
+st.title("🚀 Sequenciamento Otimizado (Prazo Strict & Setup Dinâmico) - Stema")
 
 supabase = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
 
@@ -63,10 +63,10 @@ if uploaded_file:
     resultados = df_pcp['codigo interno'].apply(lambda x: calcular_setup(x))
     df_pcp['setup (min)'], df_pcp['ferramental_grupo'] = zip(*resultados)
     
-    # Ordenação Global por Ferramental e Prazo (traz peças iguais de datas futuras para a frente)
-    df_sequenciado = df_pcp.sort_values(by=['ferramental_grupo', 'data de entrega']).copy()
+    # CORREÇÃO: Ordenação focada primeiro na data de entrega, depois no grupo de ferramenta
+    df_sequenciado = df_pcp.sort_values(by=['data de entrega', 'ferramental_grupo']).copy()
 
-    # --- MOTOR DE ALOCAÇÃO DINÂMICA POR MENOR TEMPO DE TÉRMINO ---
+    # --- MOTOR DE ALOCAÇÃO DINÂMICA (EFT) ---
     today = datetime.date.today()
     agenda = {
         "Torno GL 170G - 1": {"data": today, "ferramental": ""},
@@ -86,19 +86,19 @@ if uploaded_file:
         grupo_maq = "Torno GL 170G" if ("Ø8" in str(row['ferramental_grupo']) or "Ø9" in str(row['ferramental_grupo'])) else "Torno Centur"
         m1, m2 = f"{grupo_maq} - 1", f"{grupo_maq} - 2"
         
-        # Simula o término no Canal 1
+        # Simulação no Canal 1
         start_m1 = max(today, agenda[m1]["data"])
         setup_m1 = 0.0 if agenda[m1]["ferramental"] == str(row['ferramental_grupo']) else float(row['setup (min)'])
         minutos_m1 = setup_m1 + (row['tempo unitário (min)'] * row['quantidade'])
         fim_m1 = calcular_fim_normal(start_m1, minutos_m1)
         
-        # Simula o término no Canal 2
+        # Simulação no Canal 2
         start_m2 = max(today, agenda[m2]["data"])
         setup_m2 = 0.0 if agenda[m2]["ferramental"] == str(row['ferramental_grupo']) else float(row['setup (min)'])
         minutos_m2 = setup_m2 + (row['tempo unitário (min)'] * row['quantidade'])
         fim_m2 = calcular_fim_normal(start_m2, minutos_m2)
         
-        # Decisão inteligente: Escolhe quem entrega MAIS CEDO real do simulado
+        # Escolha por menor tempo de término real
         if fim_m1 <= fim_m2:
             maq_escolhida = m1
             start_date = start_m1
@@ -119,45 +119,7 @@ if uploaded_file:
         else:
             status = "⚡ No Prazo (Com Sobrecarga)" if prazo_limite >= today else "⚠️ ATRASADO (Prazo Vencido)"
             
-        # Atualiza a linha do tempo real da máquina sem resetar retroativamente
         agenda[maq_escolhida]["data"] = end_date
         agenda[maq_escolhida]["ferramental"] = str(row['ferramental_grupo'])
         
-        maquinas_alocadas.append(maq_escolhida)
-        datas_inicio.append(start_date)
-        datas_fim.append(end_date)
-        status_entrega.append(status)
-        setups_reais.append(setup_atual)
-        horas_totais.append(round(minutos_finais / 60, 2))
-
-    df_sequenciado['Máquina'] = maquinas_alocadas
-    df_sequenciado['Início'] = datas_inicio
-    df_sequenciado['Fim'] = datas_fim
-    df_sequenciado['Status'] = status_entrega
-    df_sequenciado['setup (min)'] = setups_reais
-    df_sequenciado['Total (Horas)'] = horas_totais
-
-    # --- GRÁFICO MENSAL ---
-    df_sequenciado['Mês/Ano'] = pd.to_datetime(df_sequenciado['Fim']).dt.to_period('M').astype(str)
-    df_mes = df_sequenciado.groupby(['Mês/Ano', 'Máquina'])['Total (Horas)'].sum().reset_index()
-    df_mes['Horas Disponíveis'] = 157.5
-    df_mes['Saldo Disponível'] = (df_mes['Horas Disponíveis'] - df_mes['Total (Horas)']).clip(lower=0)
-
-    st.write("## 📊 Ocupação Real Mensal por Máquina")
-    fig = px.bar(df_mes, x='Mês/Ano', y=['Total (Horas)', 'Saldo Disponível'], 
-                 facet_col='Máquina', facet_col_wrap=2, title="Distribuição de Horas",
-                 labels={'value': 'Horas', 'variable': 'Status'}, barmode='stack')
-    st.plotly_chart(fig, use_container_width=True)
-
-    # --- SEPARAÇÃO POR ABAS DE MÁQUINAS ---
-    st.divider()
-    st.write("## 🗓️ Filas de Trabalho Individuais por Máquina")
-    
-    lista_maquinas = ["Torno GL 170G - 1", "Torno GL 170G - 2", "Torno Centur - 1", "Torno Centur - 2"]
-    abas = st.tabs(lista_maquinas)
-    
-    for i, maq in enumerate(lista_maquinas):
-        with abas[i]:
-            df_maq = df_sequenciado[df_sequenciado['Máquina'] == maq].drop(columns=['Máquina', 'Mês/Ano'])
-            cols = ['Status', 'Início', 'Fim', 'data de entrega', 'Total (Horas)', 'setup (min)'] + [c for c in df_maq.columns if c not in ['Status', 'Início', 'Fim', 'data de entrega', 'Total (Horas)', 'setup (min)']]
-            st.dataframe(df_maq[cols], use_container_width=True)
+        maquinas_
