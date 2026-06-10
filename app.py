@@ -17,7 +17,6 @@ df_tempos, df_desenhos = carregar_dados()
 
 def limpar_tempo(val):
     try:
-        # Tenta converter para float, tratando formatos de hora se necessário
         if isinstance(val, str) and ':' in val:
             partes = val.split(':')
             return float(partes[0]) * 60 + float(partes[1])
@@ -29,33 +28,35 @@ uploaded_file = st.file_uploader("Suba a planilha do PCP", type=["xlsx", "csv"])
 
 if uploaded_file:
     df_pcp = pd.read_excel(uploaded_file)
-    # Garante que os nomes das colunas não tenham espaços extras
     df_pcp.columns = [c.strip() for c in df_pcp.columns]
     
-    # Cálculos auxiliares
-    df_pcp['tempo_unitario_min'] = df_pcp['tempo unidade'].apply(limpar_tempo)
-    df_pcp['qtd_num'] = pd.to_numeric(df_pcp['quantidade'], errors='coerce').fillna(0)
+    # Cálculos internos
+    df_pcp['tempo_calc'] = df_pcp['tempo unidade'].apply(limpar_tempo)
+    df_pcp['qtd_calc'] = pd.to_numeric(df_pcp['quantidade'], errors='coerce').fillna(0)
 
-    def calcular_setup_e_grupo(cod):
+    # Cálculo Setup
+    def calcular_setup(cod):
         filtro = df_desenhos[df_desenhos['numero_desenho'].astype(str).str.strip() == str(cod).strip()]
         if not filtro.empty:
             ferramentas = str(filtro['ferramentas_necessarias'].values[0]).split(',')
-            total_setup = sum([df_tempos[df_tempos['nome_ferramenta'].str.lower() == f.strip().lower()]['tempo_montagem'].sum() for f in ferramentas])
-            return total_setup, str(filtro['ferramentas_necessarias'].values[0])
+            total = sum([df_tempos[df_tempos['nome_ferramenta'].str.lower() == f.strip().lower()]['tempo_montagem'].sum() for f in ferramentas])
+            return total, str(filtro['ferramentas_necessarias'].values[0])
         return 0.0, "sem_ferramenta"
 
-    # Aplica cálculo para cada linha
-    resultados = df_pcp['codigo interno'].apply(lambda x: calcular_setup_e_grupo(x))
-    df_pcp['setup_total'], df_pcp['ferramental_grupo'] = zip(*resultados)
+    resultados = df_pcp['codigo interno'].apply(lambda x: calcular_setup(x))
+    df_pcp['setup_minutos'], df_pcp['ferramental_grupo'] = zip(*resultados)
     
-    # Tempo Total = Setup + (Tempo Unitário * Quantidade)
-    df_pcp['tempo_total_os'] = df_pcp['setup_total'] + (df_pcp['tempo_unitario_min'] * df_pcp['qtd_num'])
+    # Cálculo Final: (Setup + (Tempo Unitário * Quantidade)) / 60 para virar HORAS
+    df_pcp['tempo_total_horas'] = (df_pcp['setup_minutos'] + (df_pcp['tempo_calc'] * df_pcp['qtd_calc'])) / 60
     
-    # Ordena mantendo a estrutura original
-    df_sequenciado = df_pcp.sort_values(by=['ferramental_grupo', 'data de entrega', 'tempo_total_os'])
+    # Arredondamento para visualização limpa
+    df_pcp['tempo_total_horas'] = df_pcp['tempo_total_horas'].round(2)
     
-    # Remove colunas auxiliares de cálculo para a tabela ficar limpa, mantendo as originais
-    df_exibicao = df_sequenciado.drop(columns=['tempo_unitario_min', 'qtd_num'])
+    # Ordenação
+    df_sequenciado = df_pcp.sort_values(by=['ferramental_grupo', 'data de entrega', 'tempo_total_horas'])
     
-    st.success("Sequenciamento atualizado com Tempo Total (Setup + Fabricação)!")
+    # Limpeza da exibição
+    df_exibicao = df_sequenciado.drop(columns=['tempo_calc', 'qtd_calc', 'setup_minutos'])
+    
+    st.success("Tabela com Tempo Total em HORAS disponível:")
     st.dataframe(df_exibicao)
