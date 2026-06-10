@@ -5,7 +5,7 @@ import plotly.express as px
 import datetime
 
 st.set_page_config(page_title="Sistema Stema - PCP", layout="wide")
-st.title("🚀 Sequenciamento Avançado com Linha de Tempo - Stema")
+st.title("🚀 Sequenciamento Cronológico por Prazo - Stema")
 
 supabase = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
 
@@ -54,17 +54,16 @@ if uploaded_file:
     # Definição automática temporária de máquina
     df_pcp['maquina'] = df_pcp.apply(lambda r: "Torno GL 170G" if ("Ø8" in str(r['ferramental_grupo']) or "Ø9" in str(r['ferramental_grupo'])) else "Torno Centur", axis=1)
     
-    # Ordenação estratégica para o cálculo cronológico
-    df_sequenciado = df_pcp.sort_values(by=['maquina', 'ferramental_grupo', 'data de entrega', 'tempo total (min)']).copy()
+    # CORREÇÃO DA ORDENAÇÃO: Prazo de Entrega vem PRIMEIRO que a similaridade
+    df_sequenciado = df_pcp.sort_values(by=['maquina', 'data de entrega', 'ferramental_grupo', 'tempo total (min)']).copy()
 
-    # --- SIMULAÇÃO DA CRONOLOGIA DE FABRICAÇÃO ---
+    # --- SIMULAÇÃO DA CRONOLOGIA ---
     def proximo_dia_util(data):
         data += datetime.timedelta(days=1)
-        while data.weekday() >= 5:  # 5 = Sábado, 6 = Domingo
+        while data.weekday() >= 5:
             data += datetime.timedelta(days=1)
         return data
 
-    # Rastreamento de tempo por grupo de máquina (2 máquinas = 900 minutos/dia)
     minutos_disponiveis_dia = 900 
     agenda_maquinas = {
         "Torno GL 170G": {"data_atual": datetime.date.today(), "minutos_usados": 0},
@@ -77,15 +76,12 @@ if uploaded_file:
     for idx, row in df_sequenciado.iterrows():
         maq = row['maquina']
         tempo_restante = row['tempo total (min)']
-        
         agenda = agenda_maquinas[maq]
         
-        # Define a data de início do lote
         datas_inicio.append(agenda["data_atual"])
         
         while tempo_restante > 0:
             minutos_livres_hoje = minutos_disponiveis_dia - agenda["minutos_usados"]
-            
             if tempo_restante <= minutos_livres_hoje:
                 agenda["minutos_usados"] += tempo_restante
                 tempo_restante = 0
@@ -95,8 +91,6 @@ if uploaded_file:
                 agenda["minutos_usados"] = 0
                 
         datas_fim.append(agenda["data_atual"])
-        
-        # Se preencheu o dia exato, vira o dia para o próximo serviço
         if agenda["minutos_usados"] == minutos_disponiveis_dia:
             agenda["data_atual"] = proximo_dia_util(agenda["data_atual"])
             agenda["minutos_usados"] = 0
@@ -105,11 +99,16 @@ if uploaded_file:
     df_sequenciado['Fim Fabricação'] = datas_fim
     df_sequenciado['tempo total (horas)'] = (df_sequenciado['tempo total (min)'] / 60).round(2)
 
-    # --- GRÁFICO MENSAL DE DISPONIBILIDADE ---
+    # Identificação de prazos estourados
+    def checar_status(row):
+        prazo_limite = pd.to_datetime(row['data de entrega']).date()
+        return "✅ No Prazo" if row['Fim Fabricação'] <= prazo_limite else "⚠️ ATRASADO"
+
+    df_sequenciado['Status Entrega'] = df_sequenciado.apply(checar_status, axis=1)
+
+    # --- GRÁFICO MENSAL ---
     df_sequenciado['Mês/Ano'] = pd.to_datetime(df_sequenciado['Fim Fabricação']).dt.to_period('M').astype(str)
-    
     df_mes = df_sequenciado.groupby(['Mês/Ano', 'maquina'])['tempo total (horas)'].sum().reset_index()
-    # Estimativa padrão: 21 dias úteis por mês x 15 horas diárias por grupo = 315 horas disponíveis
     df_mes['Horas Disponíveis'] = 315.0
     df_mes['Saldo Disponível'] = (df_mes['Horas Disponíveis'] - df_mes['tempo total (horas)']).clip(lower=0)
 
@@ -119,10 +118,13 @@ if uploaded_file:
                  labels={'value': 'Horas', 'variable': 'Status'}, barmode='stack')
     st.plotly_chart(fig, use_container_width=True)
 
-    # --- EXIBIÇÃO DA FILA ---
+    # --- EXIBIÇÃO DA FILA REORGANIZADA ---
     st.divider()
-    st.write("## 🗓️ Sequência de Fabricação com Datas")
+    st.write("## 🗓️ Sequência de Fabricação Ajustada por Prazo")
     for maq in ["Torno GL 170G", "Torno Centur"]:
         st.subheader(f"📋 Fila Cronológica: {maq}")
         df_exibir = df_sequenciado[df_sequenciado['maquina'] == maq].drop(columns=['maquina', 'tempo total (min)', 'Mês/Ano'])
-        st.dataframe(df_exibir, use_container_width=True)
+        
+        # Reposiciona as colunas de data para o começo da visualização
+        cols = ['Status Entrega', 'Início Fabricação', 'Fim Fabricação', 'data de entrega'] + [c for c in df_exibir.columns if c not in ['Status Entrega', 'Início Fabricação', 'Fim Fabricação', 'data de entrega']]
+        st.dataframe(df_exibir[cols], use_container_width=True)
