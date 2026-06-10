@@ -5,7 +5,7 @@ import plotly.express as px
 import datetime
 
 st.set_page_config(page_title="Sistema Stema - PCP", layout="wide")
-st.title("🚀 Sequenciamento por Prazo e Carga de Máquinas - Stema")
+st.title("🚀 Sequenciamento e Fila por Máquina - Stema")
 
 supabase = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
 
@@ -51,19 +51,18 @@ if uploaded_file:
     df_pcp['setup (min)'], df_pcp['ferramental_grupo'] = zip(*resultados)
     df_pcp['tempo total (min)'] = df_pcp['setup (min)'] + (df_pcp['tempo unitário (min)'] * df_pcp['quantidade'])
     
-    # ORDENAÇÃO SOLICITADA: Data de entrega em 1º lugar, Similaridade em 2º lugar
+    # Ordenação: Foco no Prazo de Entrega primeiro, depois Similaridade
     df_sequenciado = df_pcp.sort_values(by=['data de entrega', 'ferramental_grupo', 'tempo total (min)']).copy()
 
-    # --- SIMULAÇÃO COM 4 MÁQUINAS INDIVIDUAIS ---
+    # --- SIMULAÇÃO DA FILA DE TRABALHO DIÁRIA ---
     def proximo_dia_util(data):
         data += datetime.timedelta(days=1)
         while data.weekday() >= 5:
             data += datetime.timedelta(days=1)
         return data
 
-    MINUTOS_DIARIOS_POR_MAQUINA = 450 # 7h30min livres
+    MINUTOS_DIARIOS_POR_MAQUINA = 450
     
-    # Agenda separada para cada uma das 4 máquinas
     agenda = {
         "Torno GL 170G - 1": {"data": datetime.date.today(), "min": 0},
         "Torno GL 170G - 2": {"data": datetime.date.today(), "min": 0},
@@ -76,16 +75,11 @@ if uploaded_file:
     datas_fim = []
 
     for idx, row in df_sequenciado.iterrows():
-        # Identifica o tipo de torno necessário
         grupo_maq = "Torno GL 170G" if ("Ø8" in str(row['ferramental_grupo']) or "Ø9" in str(row['ferramental_grupo'])) else "Torno Centur"
-        m1 = f"{grupo_maq} - 1"
-        m2 = f"{grupo_maq} - 2"
+        m1, m2 = f"{grupo_maq} - 1", f"{grupo_maq} - 2"
         
-        # Escolhe a máquina que estiver livre mais cedo (Balanceamento de Carga)
-        score1 = (agenda[m1]["data"], agenda[m1]["min"])
-        score2 = (agenda[m2]["data"], agenda[m2]["min"])
-        
-        maq_escolhida = m1 if score1 <= score2 else m2
+        # Aloca na máquina que estiver livre mais cedo
+        maq_escolhida = m1 if (agenda[m1]["data"], agenda[m1]["min"]) <= (agenda[m2]["data"], agenda[m2]["min"]) else m2
         m_agenda = agenda[maq_escolhida]
         
         maquinas_alocadas.append(maq_escolhida)
@@ -107,36 +101,39 @@ if uploaded_file:
             m_agenda["data"] = proximo_dia_util(m_agenda["data"])
             m_agenda["min"] = 0
 
-    df_sequenciado['Máquina Alocada'] = maquinas_alocadas
-    df_sequenciado['Início Fabricação'] = datas_inicio
-    df_sequenciado['Fim Fabricação'] = datas_fim
-    df_sequenciado['tempo total (horas)'] = (df_sequenciado['tempo total (min)'] / 60).round(2)
+    df_sequenciado['Máquina'] = maquinas_alocadas
+    df_sequenciado['Início'] = datas_inicio
+    df_sequenciado['Fim'] = datas_fim
+    df_sequenciado['Total (Horas)'] = (df_sequenciado['tempo total (min)'] / 60).round(2)
 
-    def checar_status(row):
-        prazo_limite = pd.to_datetime(row['data de entrega']).date()
-        return "✅ No Prazo" if row['Fim Fabricação'] <= prazo_limite else "⚠️ ATRASADO"
+    df_sequenciado['Status'] = df_sequenciado.apply(lambda r: "✅ No Prazo" if r['Fim'] <= pd.to_datetime(r['data de entrega']).date() else "⚠️ ATRASADO", axis=1)
 
-    df_sequenciado['Status Entrega'] = df_sequenciado.apply(checar_status, axis=1)
-
-    # --- GRÁFICO MENSAL INDIVIDUALIZADO POR MÁQUINA ---
-    df_sequenciado['Mês/Ano'] = pd.to_datetime(df_sequenciado['Fim Fabricação']).dt.to_period('M').astype(str)
-    df_mes = df_sequenciado.groupby(['Mês/Ano', 'Máquina Alocada'])['tempo total (horas)'].sum().reset_index()
-    
-    # 21 dias úteis x 7.5 horas = 157.5 horas disponíveis por máquina no mês
+    # --- GRÁFICOS MENSAIS ---
+    df_sequenciado['Mês/Ano'] = pd.to_datetime(df_sequenciado['Fim']).dt.to_period('M').astype(str)
+    df_mes = df_sequenciado.groupby(['Mês/Ano', 'Máquina'])['Total (Horas)'].sum().reset_index()
     df_mes['Horas Disponíveis'] = 157.5
-    df_mes['Saldo Disponível'] = (df_mes['Horas Disponíveis'] - df_mes['tempo total (horas)']).clip(lower=0)
+    df_mes['Saldo Disponível'] = (df_mes['Horas Disponíveis'] - df_mes['Total (Horas)']).clip(lower=0)
 
-    st.write("## 📊 Capacidade Disponível vs Ocupada por Mês (Por Máquina)")
-    fig = px.bar(df_mes, x='Mês/Ano', y=['tempo total (horas)', 'Saldo Disponível'], 
-                 facet_col='Máquina Alocada', facet_col_wrap=2, title="Distribuição Mensal de Carga de Trabalho",
+    st.write("## 📊 Ocupação Mensal do Grupo")
+    fig = px.bar(df_mes, x='Mês/Ano', y=['Total (Horas)', 'Saldo Disponível'], 
+                 facet_col='Máquina', facet_col_wrap=2, title="Análise de Carga Horária",
                  labels={'value': 'Horas', 'variable': 'Status'}, barmode='stack')
     st.plotly_chart(fig, use_container_width=True)
 
-    # --- EXIBIÇÃO DA FILA GERAL SEQUENCIADA ---
+    # --- SEPARAÇÃO VISUAL POR MÁQUINA ---
     st.divider()
-    st.write("## 🗓️ Fila Única de Fabricação (Ordenada por Urgência e Semelhança)")
+    st.write("## 🗓️ Filas de Trabalho Individuais")
     
-    df_exibir = df_sequenciado.drop(columns=['tempo total (min)', 'Mês/Ano'])
-    cols_ordenadas = ['Status Entrega', 'Máquina Alocada', 'Início Fabricação', 'Fim Fabricação', 'data de entrega'] + [c for c in df_exibir.columns if c not in ['Status Entrega', 'Máquina Alocada', 'Início Fabricação', 'Fim Fabricação', 'data de entrega']]
+    # Criando abas para separar cada máquina perfeitamente
+    lista_maquinas = ["Torno GL 170G - 1", "Torno GL 170G - 2", "Torno Centur - 1", "Torno Centur - 2"]
+    abas = st.tabs(lista_maquinas)
     
-    st.dataframe(df_exibir[cols_ordenadas], use_container_width=True)
+    for i, maq in enumerate(lista_maquinas):
+        with abas[i]:
+            df_maq = df_sequenciado[df_sequenciado['Máquina'] == maq].drop(columns=['Máquina', 'tempo total (min)', 'Mês/Ano'])
+            
+            # Organização visual das colunas na tabela
+            cols = ['Status', 'Início', 'Fim', 'data de entrega', 'Total (Horas)', 'setup (min)'] + [c for c in df_maq.columns if c not in ['Status', 'Início', 'Fim', 'data de entrega', 'Total (Horas)', 'setup (min)']]
+            
+            st.write(f"### Fila Cronológica de Fabricação")
+            st.dataframe(df_maq[cols], use_container_width=True)
