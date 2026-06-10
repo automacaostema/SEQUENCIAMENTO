@@ -4,15 +4,13 @@ from supabase import create_client
 import datetime
 
 st.set_page_config(layout="wide")
-st.title("🚀 Sequenciamento PCP - Setup Inteligente")
+st.title("🚀 Sequenciamento PCP")
 
-# 1. Conexão
 try:
     supabase = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
 except Exception as e:
     st.error(f"Erro Supabase: {e}")
 
-# 2. Dados
 @st.cache_data(ttl=60)
 def carregar_dados():
     try:
@@ -24,7 +22,6 @@ def carregar_dados():
 
 df_tempos, df_desenhos = carregar_dados()
 
-# 3. Funções
 def limpar_tempo(v):
     try:
         if isinstance(v, (int, float)): return float(v)
@@ -45,14 +42,14 @@ def calcular_fim(inicio, mins):
             while data.weekday() >= 5: data += datetime.timedelta(days=1)
     return data
 
-# 4. Interface
-uploaded_file = st.file_uploader("Suba a planilha do PCP", type=["xlsx", "csv"])
+uploaded_file = st.file_uploader("Suba a planilha", type=["xlsx", "csv"])
 
 if uploaded_file:
-    try:
-        df = pd.read_excel(uploaded_file)
-        df.columns = [c.strip() for c in df.columns]
-        df['tempo unitário (min)'] = df['tempo unidade'].apply(limpar_tempo)
-        df['quantidade'] = pd.to_numeric(df['quantidade'], errors='coerce').fillna(0)
+    df = pd.read_excel(uploaded_file)
+    df.columns = [c.strip() for c in df.columns]
+    df['tempo unitário (min)'] = df['tempo unidade'].apply(limpar_tempo)
+    df['quantidade'] = pd.to_numeric(df['quantidade'], errors='coerce').fillna(0)
 
-        def
+    def get_ferramenta(cod):
+        f = df_desenhos[df_desenhos['numero_desenho'].astype(str).str.strip() == str(cod).strip()]
+        return str(f['ferramentas_necessarias'].values[0]) if not f.
