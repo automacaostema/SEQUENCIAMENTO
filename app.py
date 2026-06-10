@@ -52,7 +52,8 @@ def calcular_fim_normal(ini, mins):
 up = st.file_uploader("Planilha", type=["xlsx", "csv"])
 
 if up:
-    if "f_name" not in st.session_state or st.session_state.f_name != up.name:
+    # Trava de segurança adicionada aqui para evitar o AttributeError
+    if "df_pcp" not in st.session_state or "f_name" not in st.session_state or st.session_state.f_name != up.name:
         st.session_state.f_name = up.name
         df_raw = pd.read_excel(up)
         df_raw.columns = [c.strip() for c in df_raw.columns]
@@ -135,7 +136,7 @@ if up:
     df_seq["setup (min)"] = setups_reais
     df_seq["Total (Horas)"] = horas_totais
 
-    # --- SESSÃO VISUAL: GRÁFICOS ---
+    # --- GRÁFICOS ---
     df_seq["Mês/Ano"] = pd.to_datetime(df_seq["Fim"]).dt.to_period("M").astype(str)
     df_mes = df_seq.groupby(["Mês/Ano", "Máquina"])["Total (Horas)"].sum().reset_index()
     df_mes["Horas Disponíveis"] = 157.5
@@ -145,7 +146,7 @@ if up:
     fig = px.bar(df_mes, x="Mês/Ano", y=["Total (Horas)", "Saldo Disponível"], facet_col="Máquina", facet_col_wrap=2, title="Horas", labels={"value": "Horas", "variable": "Status"}, barmode="stack")
     st.plotly_chart(fig, use_container_width=True)
 
-    # --- SESSÃO VISUAL: ABAS DAS MÁQUINAS ---
+    # --- ABAS ---
     st.divider()
     st.write("## 🗓️ Filas de Trabalho")
     abas = st.tabs(m_list)
