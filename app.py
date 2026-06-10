@@ -49,10 +49,15 @@ def calcular_fim(inicio, mins):
 uploaded_file = st.file_uploader("Suba a planilha", type=["xlsx", "csv"])
 
 if uploaded_file:
-    df = pd.read_excel(uploaded_file)
-    df.columns = [c.strip() for c in df.columns]
-    df['tempo unitário (min)'] = df['tempo unidade'].apply(limpar_tempo)
-    df['quantidade'] = pd.to_numeric(df['quantidade'], errors='coerce').fillna(0)
+    try:
+        df = pd.read_excel(uploaded_file)
+        df.columns = [c.strip() for c in df.columns]
+        df['tempo unitário (min)'] = df['tempo unidade'].apply(limpar_tempo)
+        df['quantidade'] = pd.to_numeric(df['quantidade'], errors='coerce').fillna(0)
 
-    def get_ferramenta(cod):
-        f = df_desenhos[df_desenhos['numero_desenho'].astype
+        def get_ferramenta(cod):
+            # Linha corrigida com fechamento correto
+            f = df_desenhos[df_desenhos['numero_desenho'].astype(str).str.strip() == str(cod).strip()]
+            return str(f['ferramentas_necessarias'].values[0]) if not f.empty else "sem_ferramenta"
+
+        df['
