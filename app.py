@@ -52,7 +52,6 @@ def calcular_fim_normal(ini, mins):
 up = st.file_uploader("Planilha", type=["xlsx", "csv"])
 
 if up:
-    # Trava de segurança adicionada aqui para evitar o AttributeError
     if "df_pcp" not in st.session_state or "f_name" not in st.session_state or st.session_state.f_name != up.name:
         st.session_state.f_name = up.name
         df_raw = pd.read_excel(up)
@@ -84,8 +83,14 @@ if up:
     st.info("Altere os números da coluna 'Ordem' para recalcular automaticamente.")
     
     dis_cols = [c for c in st.session_state.df_pcp.columns if c != "Ordem"]
-    df_editado = st.data_editor(st.session_state.df_pcp, disabled=dis_cols, use_container_width=True)
-    st.session_state.df_pcp = df_editado
+    
+    # Fixado com chave nativa para evitar bugs de atualização
+    df_editado = st.data_editor(
+        st.session_state.df_pcp, 
+        disabled=dis_cols, 
+        use_container_width=True, 
+        key="editor_pcp"
+    )
 
     df_seq = df_editado.sort_values(by=["Ordem"]).copy()
     today = datetime.date.today()
