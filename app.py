@@ -59,12 +59,9 @@ if menu == "🚀 Sequenciamento":
     if up:
         df_raw = pd.read_excel(up)
         df_raw.columns = [c.strip() for c in df_raw.columns]
-        
-        # Carrega dados do banco
         df_tempos = pd.DataFrame(client.table("tabela_tempos").select("*").execute().data)
         df_desenhos = pd.DataFrame(client.table("tabela_desenhos").select("*").execute().data)
         
-        # Processamento
         df_raw["tempo unitário (min)"] = df_raw["tempo unidade"].apply(limpar_tempo)
         res = [calc_setup(c, df_tempos, df_desenhos) for c in df_raw["codigo interno"]]
         df_raw["setup (min)"], df_raw["ferramental_grupo"] = zip(*res)
@@ -73,7 +70,6 @@ if menu == "🚀 Sequenciamento":
         
         df_edit = st.data_editor(df_raw, disabled=[c for c in df_raw.columns if c != "Ordem"], use_container_width=True)
         
-        # Cálculo de Ocupação
         today = dt.date.today()
         m_list = ["Torno GL 170G - 1", "Torno GL 170G - 2", "Torno Centur - 1", "Torno Centur - 2"]
         agenda = {m: {"data": today, "ferramental": ""} for m in m_list}
@@ -82,8 +78,6 @@ if menu == "🚀 Sequenciamento":
         for r in df_edit.to_dict("records"):
             fg = str(r["ferramental_grupo"])
             g_maq = "Torno GL 170G" if ("8" in fg or "9" in fg) else "Torno Centur"
-            
-            # Balanceamento entre máquinas do mesmo grupo
             maqs = [f"{g_maq} - 1", f"{g_maq} - 2"]
             possiveis = []
             for m in maqs:
@@ -109,13 +103,15 @@ if menu == "🚀 Sequenciamento":
         fig = px.bar(df_mes, x="Mês/Ano", y="Total (Horas)", facet_col="Máquina", facet_col_wrap=2, barmode="stack")
         st.plotly_chart(fig, use_container_width=True)
 
-        # Filas
+        # Filas na ordem solicitada
         st.write("## 🗓️ Filas de Trabalho")
-        col_ordem = ["codigo interno", "n servico", "Status", "data de entrega", "Início", "Fim", "quantidade", "setup (min)", "Total (Horas)", "ferramental_grupo"]
-        for maq in m_list:
-            with st.expander(f"Fila: {maq}"):
-                df_m = df_seq[df_seq["Máquina"] == maq][col_ordem]
-                st.dataframe(df_m, use_container_width=True)
+        col_ordem = ["codigo interno", "n servico", "Status", "data de entrega", "Início", "Fim", "quantidade", "setup (min)", "tempo unidade", "Total (Horas)", "ferramental_grupo"]
+        abas = st.tabs(m_list)
+        for i, maq in enumerate(m_list):
+            with abas[i]:
+                df_m = df_seq[df_seq["Máquina"] == maq].copy()
+                if "tempo unitário (min)" in df_m.columns: df_m = df_m.drop(columns=["tempo unitário (min)"])
+                st.dataframe(df_m[[c for c in col_ordem if c in df_m.columns]], use_container_width=True)
 
 # --- TABELAS ---
 elif menu in ["🔧 Tabela Tempos", "📐 Tabela Desenhos"]:
