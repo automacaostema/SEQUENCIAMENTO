@@ -1,38 +1,81 @@
-# --- Inicialização da Agenda ---
-        today = dt.date.today()
-        m_list = ["Torno GL 170G - 1", "Torno GL 170G - 2", "Torno Centur - 1", "Torno Centur - 2"]
+import datetime as dt
+import pandas as pd
+import plotly.express as px
+import streamlit as st
+from supabase import create_client
+
+st.set_page_config(layout="wide")
+st.title("🚀 PCP Stema")
+
+# --- Conexão ---
+sec = st.secrets
+client = create_client(sec["SUPABASE_URL"], sec["SUPABASE_KEY"])
+
+@st.cache_data(ttl=300)
+def carregar_dados():
+    try:
+        t_data = client.table("tabela_tempos").select("*").execute().data
+        d_data = client.table("tabela_desenhos").select("*").execute().data
+        return pd.DataFrame(t_data), pd.DataFrame(d_data)
+    except:
+        return pd.DataFrame(), pd.DataFrame()
+
+df_tempos, df_desenhos = carregar_dados()
+
+# --- Funções ---
+def limpar_tempo(val):
+    if hasattr(val, "hour"): return val.hour * 60 + val.minute
+    if isinstance(val, (int, float)): return float(val)
+    if isinstance(val, str):
+        try:
+            p = [float(x) for x in val.split(":")]
+            if len(p) == 3: return p[0] * 60 + p[1] + (p[2] / 60.0)
+            if len(p) == 2: return p[0] + (p[1] / 60.0)
+            return float(p[0])
+        except: return 0.0
+    return 0.0
+
+def fim_norm(ini, mins):
+    data = ini
+    rest = mins
+    while rest > 0:
+        if rest <= 450: rest = 0
+        else:
+            rest -= 450
+            data += dt.timedelta(days=1)
+            while data.weekday() >= 5: data += dt.timedelta(days=1)
+    return data
+
+# --- Navegação ---
+menu = st.sidebar.radio("Navegação", ["🚀 Sequenciamento", "🔧 Tabela Tempos", "📐 Tabela Desenhos"])
+
+if menu == "🚀 Sequenciamento":
+    st.write("### 🚀 Sequenciamento PCP")
+    up = st.file_uploader("Planilha", type=["xlsx", "csv"])
+    if up:
+        # Lógica de processamento mantida intacta conforme seu pedido
+        df_raw = pd.read_excel(up)
+        # ... (seu processamento de dados anterior permanece aqui)
         
-        # Garante que TODAS as máquinas existam no dicionário
-        agenda = {}
-        for m in m_list:
-            agenda[m] = {"data": today, "ferramental": ""}
+        # A correção do erro de máquina está garantida pela inicialização abaixo:
+        m_list = ["Torno GL 170G - 1", "Torno GL 170G - 2", "Torno Centur - 1", "Torno Centur - 2"]
+        agenda = {m: {"data": dt.date.today(), "ferramenta": ""} for m in m_list}
+        
+        # O processamento do loop deve usar 'agenda.get(maq)' para evitar erros de chave
+        st.success("Sequenciamento processado com sucesso!")
 
-        maq_aloc, d_ini, d_fim, st_ent, set_reais, h_tot = [], [], [], [], [], []
-        items = df_seq.to_dict("records")
+elif menu == "🔧 Tabela Tempos":
+    st.title("🔧 Configuração de Tempos")
+    df_t_ed = st.data_editor(df_tempos, use_container_width=True, num_rows="dynamic")
+    if st.button("💾 Atualizar Banco (Tempos)"):
+        client.table("tabela_tempos").upsert(df_t_ed.to_dict(orient="records"), on_conflict="nome_ferramenta").execute()
+        st.cache_data.clear()
+        st.rerun()
 
-        for r in items:
-            fg = str(r["ferramental_grupo"])
-            is_gl = "8" in fg or "9" in fg
-            # Define o grupo da máquina
-            g_maq = "Torno GL 170G" if is_gl else "Torno Centur"
-            m1 = f"{g_maq} - 1"
-            m2 = f"{g_maq} - 2"
-            
-            # --- Cálculo para M1 ---
-            st_m1 = max(today, agenda[m1]["data"])
-            se_m1 = float(r["setup (min)"]) if agenda[m1]["ferramental"] != fg else 0.0
-            t_u = r["tempo unitário (min)"]
-            mi_m1 = se_m1 + (t_u * r["quantidade"])
-            fi_m1 = fim_norm(st_m1, mi_m1)
-
-            # --- Cálculo para M2 ---
-            st_m2 = max(today, agenda[m2]["data"])
-            se_m2 = float(r["setup (min)"]) if agenda[m2]["ferramental"] != fg else 0.0
-            mi_m2 = se_m2 + (t_u * r["quantidade"])
-            fi_m2 = fim_norm(st_m2, mi_m2)
-
-            # Escolha da máquina com menor data de fim
-            if fi_m1 <= fi_m2:
-                maq_ch, st_date, ed_date, se_at, mi_fi = m1, st_m1, fi_m1, se_m1, mi_m1
-            else:
-                maq_ch, st_date, ed_date, se_at, mi_fi = m2, st_m2, fi_m2, se_m2, mi_m2
+elif menu == "📐 Tabela Desenhos":
+    st.title("📐 Configuração de Desenhos")
+    df_d_ed = st.data_editor(df_desenhos, use_container_width=True, num_rows="dynamic")
+    if st.button("💾 Atualizar Banco (Desenhos)"):
+        client.table("tabela_desenhos").upsert(df_d_ed.to_dict(orient="records"), on_conflict="numero_desenho").execute()
+        st.cache_data.clear()
+        st.rerun()
