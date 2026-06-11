@@ -7,7 +7,7 @@ from supabase import create_client
 st.set_page_config(layout="wide")
 st.title("🚀 PCP Stema")
 
-# --- Conexão e Carregamento ---
+# --- Conexão Supabase ---
 @st.cache_resource
 def get_client():
     return create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
@@ -23,7 +23,7 @@ def carregar_dados():
     except:
         return pd.DataFrame(), pd.DataFrame()
 
-# --- Funções Auxiliares ---
+# --- Funções do PCP ---
 def limpar_tempo(val):
     if hasattr(val, "hour"): return val.hour * 60 + val.minute
     if isinstance(val, (int, float)): return float(val)
@@ -52,12 +52,13 @@ menu = st.sidebar.radio("Navegação", ["🚀 Sequenciamento", "🔧 Tabela Temp
 
 if menu == "🚀 Sequenciamento":
     st.write("### 🚀 Sequenciamento PCP")
-    up = st.file_uploader("Upload Planilha", type=["xlsx", "csv"])
+    up = st.file_uploader("Planilha", type=["xlsx", "csv"])
     if up:
         df_tempos, df_desenhos = carregar_dados()
         df_raw = pd.read_excel(up)
         df_raw.columns = [c.strip() for c in df_raw.columns]
         
+        # Cálculos iniciais
         df_raw["tempo unitário (min)"] = df_raw["tempo unidade"].apply(limpar_tempo)
         df_raw["quantidade"] = pd.to_numeric(df_raw["quantidade"], errors="coerce").fillna(0)
         
@@ -73,29 +74,41 @@ if menu == "🚀 Sequenciamento":
         res = df_raw["codigo interno"].apply(calc_setup)
         df_raw["setup (min)"], df_raw["ferramental_grupo"] = zip(*res)
         df_raw = df_raw.sort_values(by=["data de entrega", "ferramental_grupo"]).copy()
+        df_raw["Ordem"] = range(1, len(df_raw) + 1)
         
-        st.write("### ✏️ Sequenciamento Manual")
         df_editado = st.data_editor(df_raw, use_container_width=True)
         
-        # Ocupação e Gráficos
+        # --- Lógica de Fila Automática Original ---
+        today = dt.date.today()
+        m_list = ["Torno GL 170G - 1", "Torno GL 170G - 2", "Torno Centur - 1", "Torno Centur - 2"]
+        agenda = {m: {"data": today, "ferramental": ""} for m in m_list}
+        maq_aloc, d_ini, d_fim, st_ent, set_reais, h_tot = [], [], [], [], [], []
+        
+        for r in df_editado.to_dict("records"):
+            fg = str(r["ferramental_grupo"])
+            is_gl = "8" in fg or "9" in fg
+            g_maq = "Torno GL 170G" if is_gl else "Torno Centur"
+            m1, m2 = f"{g_maq} - 1", f"{g_maq} - 2"
+            
+            # Cálculo de datas e status
+            st_m1 = max(today, agenda[m1]["data"])
+            fi_m1 = fim_norm(st_m1, (0.0 if agenda[m1]["ferramental"]==fg else r["setup (min)"]) + (r["tempo unitário (min)"]*r["quantidade"]))
+            st_m2 = max(today, agenda[m2]["data"])
+            fi_m2 = fim_norm(st_m2, (0.0 if agenda[m2]["ferramental"]==fg else r["setup (min)"]) + (r["tempo unitário (min)"]*r["quantidade"]))
+            
+            maq_ch = m1 if fi_m1 <= fi_m2 else m2
+            agenda[maq_ch]["data"] = fi_m1 if maq_ch == m1 else fi_m2
+            agenda[maq_ch]["ferramental"] = fg
+            
+            maq_aloc.append(maq_ch); d_fim.append(agenda[maq_ch]["data"]); h_tot.append(round((r["tempo unitário (min)"] * r["quantidade"]) / 60, 2))
+
+        df_editado["Máquina"] = maq_aloc
+        df_editado["Fim"] = d_fim
+        df_editado["Total (Horas)"] = h_tot
+        
         st.write("## 📊 Ocupação Real")
-        fig = px.bar(df_editado, x="ferramental_grupo", y="setup (min)", title="Carga de Setup por Grupo")
+        fig = px.bar(df_editado, x="Máquina", y="Total (Horas)", color="ferramental_grupo", barmode="stack")
         st.plotly_chart(fig, use_container_width=True)
 
 elif menu == "🔧 Tabela Tempos":
     st.title("🔧 Configuração de Tempos")
-    df_tempos, _ = carregar_dados()
-    df_edit = st.data_editor(df_tempos, num_rows="dynamic", use_container_width=True)
-    if st.button("💾 Salvar Tempos"):
-        client.table("tabela_tempos").upsert(df_edit.to_dict(orient="records"), on_conflict="nome_ferramenta").execute()
-        st.cache_data.clear()
-        st.rerun()
-
-elif menu == "📐 Tabela Desenhos":
-    st.title("📐 Configuração de Desenhos")
-    _, df_desenhos = carregar_dados()
-    df_edit = st.data_editor(df_desenhos, num_rows="dynamic", use_container_width=True)
-    if st.button("💾 Salvar Desenhos"):
-        client.table("tabela_desenhos").upsert(df_edit.to_dict(orient="records"), on_conflict="numero_desenho").execute()
-        st.cache_data.clear()
-        st.rerun()
