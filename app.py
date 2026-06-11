@@ -1,3 +1,41 @@
+import datetime as dt
+import pandas as pd
+import plotly.express as px
+import streamlit as st
+from supabase import create_client
+
+st.set_page_config(layout="wide")
+st.title("🚀 PCP Stema")
+
+def invalidar_cache():
+    st.cache_data.clear()
+
+sec = st.secrets
+url = sec["SUPABASE_URL"]
+key = sec["SUPABASE_KEY"]
+client = create_client(url, key)
+
+@st.cache_data(ttl=300)
+def carregar_dados():
+    try:
+        t_tbl = client.table("tabela_tempos")
+        d_tbl = client.table("tabela_desenhos")
+        t_data = t_tbl.select("*").execute().data
+        d_data = d_tbl.select("*").execute().data
+        return pd.DataFrame(t_data), pd.DataFrame(d_data)
+    except Exception as e:
+        st.error(f"Erro de conexão: {e}")
+        return pd.DataFrame(), pd.DataFrame()
+
+df_tempos, df_desenhos = carregar_dados()
+
+# Sidebar
+menu = st.sidebar.radio("Navegação", ["🚀 Sequenciamento", "🔧 Tabela Tempos", "📐 Tabela Desenhos"])
+
+# ESTRUTURA CORRETA: O primeiro deve ser sempre um 'if'
+if menu == "🚀 Sequenciamento":
+    st.write("Funcionalidade de sequenciamento ativa.")
+
 elif menu == "🔧 Tabela Tempos":
     st.title("🔧 Configuração de Tempos")
     df_t_ed = st.data_editor(df_tempos, use_container_width=True, num_rows="dynamic")
