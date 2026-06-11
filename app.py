@@ -1,57 +1,56 @@
-import datetime as dt
-import pandas as pd
-import plotly.express as px
 import streamlit as st
+import pandas as pd
 from supabase import create_client
+import datetime as dt
 
 st.set_page_config(layout="wide")
 st.title("🚀 PCP Stema")
 
-def invalidar_cache():
-    st.cache_data.clear()
+# --- Configuração Supabase ---
+@st.cache_resource
+def get_client():
+    return create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
 
-sec = st.secrets
-url = sec["SUPABASE_URL"]
-key = sec["SUPABASE_KEY"]
-client = create_client(url, key)
+client = get_client()
 
-@st.cache_data(ttl=300)
+# --- Funções de Dados ---
+@st.cache_data(ttl=60)
 def carregar_dados():
-    try:
-        t_tbl = client.table("tabela_tempos")
-        d_tbl = client.table("tabela_desenhos")
-        t_data = t_tbl.select("*").execute().data
-        d_data = d_tbl.select("*").execute().data
-        return pd.DataFrame(t_data), pd.DataFrame(d_data)
-    except Exception as e:
-        st.error(f"Erro de conexão: {e}")
-        return pd.DataFrame(), pd.DataFrame()
+    t_data = client.table("tabela_tempos").select("*").execute().data
+    d_data = client.table("tabela_desenhos").select("*").execute().data
+    return pd.DataFrame(t_data), pd.DataFrame(d_data)
 
-df_tempos, df_desenhos = carregar_dados()
+# --- Sidebar ---
+menu = st.sidebar.radio("Navegação", ["🔧 Tabela Tempos", "📐 Tabela Desenhos"])
 
-# Sidebar
-menu = st.sidebar.radio("Navegação", ["🚀 Sequenciamento", "🔧 Tabela Tempos", "📐 Tabela Desenhos"])
-
-# ESTRUTURA CORRETA: O primeiro deve ser sempre um 'if'
-if menu == "🚀 Sequenciamento":
-    st.write("Funcionalidade de sequenciamento ativa.")
-
-elif menu == "🔧 Tabela Tempos":
+# --- Lógica de Salvamento (Corrigida) ---
+if menu == "🔧 Tabela Tempos":
     st.title("🔧 Configuração de Tempos")
-    df_t_ed = st.data_editor(df_tempos, use_container_width=True, num_rows="dynamic")
-    if st.button("💾 Atualizar Banco (Tempos)"):
-        dict_t = df_t_ed.to_dict(orient="records")
-        client.table("tabela_tempos").upsert(dict_t).execute()
-        invalidar_cache()
-        st.success("Banco de Tempos Atualizado!")
-        st.rerun()
+    df_t, _ = carregar_dados()
+    df_editado = st.data_editor(df_t, num_rows="dynamic", use_container_width=True)
+    
+    if st.button("💾 Salvar Tempos"):
+        # O on_conflict é vital para o Upsert funcionar sem duplicar
+        dados = df_editado.to_dict(orient="records")
+        try:
+            client.table("tabela_tempos").upsert(dados, on_conflict="nome_ferramenta").execute()
+            st.success("Dados salvos com sucesso!")
+            st.cache_data.clear()
+            st.rerun()
+        except Exception as e:
+            st.error(f"Erro ao salvar: {e}")
 
 elif menu == "📐 Tabela Desenhos":
     st.title("📐 Configuração de Desenhos")
-    df_d_ed = st.data_editor(df_desenhos, use_container_width=True, num_rows="dynamic")
-    if st.button("💾 Atualizar Banco (Desenhos)"):
-        dict_d = df_d_ed.to_dict(orient="records")
-        client.table("tabela_desenhos").upsert(dict_d).execute()
-        invalidar_cache()
-        st.success("Banco de Desenhos Atualizado!")
-        st.rerun()
+    _, df_d = carregar_dados()
+    df_editado = st.data_editor(df_d, num_rows="dynamic", use_container_width=True)
+    
+    if st.button("💾 Salvar Desenhos"):
+        dados = df_editado.to_dict(orient="records")
+        try:
+            client.table("tabela_desenhos").upsert(dados, on_conflict="numero_desenho").execute()
+            st.success("Dados salvos com sucesso!")
+            st.cache_data.clear()
+            st.rerun()
+        except Exception as e:
+            st.error(f"Erro ao salvar: {e}")
