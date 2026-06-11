@@ -1,7 +1,8 @@
-import streamlit as st
-import pandas as pd
-from supabase import create_client
 import datetime as dt
+import pandas as pd
+import plotly.express as px
+import streamlit as st
+from supabase import create_client
 
 st.set_page_config(layout="wide")
 st.title("🚀 PCP Stema")
@@ -13,44 +14,63 @@ def get_client():
 
 client = get_client()
 
-# --- Funções de Dados ---
 @st.cache_data(ttl=60)
 def carregar_dados():
     t_data = client.table("tabela_tempos").select("*").execute().data
     d_data = client.table("tabela_desenhos").select("*").execute().data
     return pd.DataFrame(t_data), pd.DataFrame(d_data)
 
-# --- Sidebar ---
-menu = st.sidebar.radio("Navegação", ["🔧 Tabela Tempos", "📐 Tabela Desenhos"])
-
-# --- Lógica de Salvamento (Corrigida) ---
-if menu == "🔧 Tabela Tempos":
-    st.title("🔧 Configuração de Tempos")
-    df_t, _ = carregar_dados()
-    df_editado = st.data_editor(df_t, num_rows="dynamic", use_container_width=True)
-    
-    if st.button("💾 Salvar Tempos"):
-        # O on_conflict é vital para o Upsert funcionar sem duplicar
-        dados = df_editado.to_dict(orient="records")
+# --- Funções do PCP ---
+def limpar_tempo(val):
+    if hasattr(val, "hour"): return val.hour * 60 + val.minute
+    if isinstance(val, (int, float)): return float(val)
+    if isinstance(val, str):
         try:
-            client.table("tabela_tempos").upsert(dados, on_conflict="nome_ferramenta").execute()
-            st.success("Dados salvos com sucesso!")
-            st.cache_data.clear()
-            st.rerun()
-        except Exception as e:
-            st.error(f"Erro ao salvar: {e}")
+            p = [float(x) for x in val.split(":")]
+            if len(p) == 3: return p[0] * 60 + p[1] + (p[2] / 60.0)
+            if len(p) == 2: return p[0] + (p[1] / 60.0)
+            if len(p) == 1: return p[0]
+        except: return 0.0
+    return 0.0
+
+def fim_norm(ini, mins):
+    data = ini
+    rest = mins
+    while rest > 0:
+        if rest <= 450: rest = 0
+        else:
+            rest -= 450
+            data += dt.timedelta(days=1)
+            while data.weekday() >= 5: data += dt.timedelta(days=1)
+    return data
+
+# --- Navegação ---
+menu = st.sidebar.radio("Navegação", ["🚀 Sequenciamento", "🔧 Tabela Tempos", "📐 Tabela Desenhos"])
+
+if menu == "🚀 Sequenciamento":
+    df_tempos, df_desenhos = carregar_dados()
+    up = st.file_uploader("Planilha PCP", type=["xlsx", "csv"])
+    if up:
+        # Aqui entra a sua lógica original de cálculo de sequenciamento
+        st.write("Processando sequenciamento...")
+        # ... (seu código de processamento do dataframe original)
+
+elif menu == "🔧 Tabela Tempos":
+    st.title("🔧 Configuração de Tempos")
+    df_tempos, _ = carregar_dados()
+    df_editado = st.data_editor(df_tempos, num_rows="dynamic", use_container_width=True)
+    if st.button("💾 Salvar Tempos"):
+        dados = df_editado.to_dict(orient="records")
+        client.table("tabela_tempos").upsert(dados, on_conflict="nome_ferramenta").execute()
+        st.cache_data.clear()
+        st.rerun()
 
 elif menu == "📐 Tabela Desenhos":
     st.title("📐 Configuração de Desenhos")
-    _, df_d = carregar_dados()
-    df_editado = st.data_editor(df_d, num_rows="dynamic", use_container_width=True)
-    
+    _, df_desenhos = carregar_dados()
+    df_editado = st.data_editor(df_desenhos, num_rows="dynamic", use_container_width=True)
     if st.button("💾 Salvar Desenhos"):
         dados = df_editado.to_dict(orient="records")
-        try:
-            client.table("tabela_desenhos").upsert(dados, on_conflict="numero_desenho").execute()
-            st.success("Dados salvos com sucesso!")
-            st.cache_data.clear()
-            st.rerun()
-        except Exception as e:
-            st.error(f"Erro ao salvar: {e}")
+        client.table("tabela_desenhos").upsert(dados, on_conflict="numero_desenho").execute()
+        st.cache_data.clear()
+        st.rerun()
