@@ -5,7 +5,7 @@ import streamlit as st
 from supabase import create_client
 
 st.set_page_config(layout="wide")
-st.title("🚀 Sequenciamento - Restauração")
+st.title("🚀 Sequenciamento Otimizado")
 
 sec = st.secrets
 url = sec["SUPABASE_URL"]
@@ -66,3 +66,47 @@ if menu == "🚀 Sequenciamento":
     if up:
         df_raw = pd.read_excel(up)
         df_raw.columns = [c.strip() for c in df_raw.columns]
+
+        # Verificador de colunas obrigatórias
+        req = [
+            "tempo unidade",
+            "quantidade",
+            "codigo interno",
+            "data de entrega",
+        ]
+        erros = [c for c in req if c not in df_raw.columns]
+
+        if erros:
+            st.error(f"❌ Colunas ausentes no Excel: {erros}")
+            st.write("⚠️ Colunas encontradas no seu arquivo:")
+            st.write(list(df_raw.columns))
+        else:
+            t_uni = df_raw["tempo unidade"].apply(limpar_tempo)
+            df_raw["tempo unitário (min)"] = t_uni
+
+            qtd = df_raw["quantidade"]
+            qtd_num = pd.to_numeric(qtd, errors="coerce")
+            df_raw["quantidade"] = qtd_num.fillna(0)
+
+            def calcular_setup(cod):
+                c_str = str(cod).strip()
+                des_num = df_desenhos["numero_desenho"]
+                mask = des_num.astype(str).str.strip() == c_str
+                filtro = df_desenhos[mask]
+                if not filtro.empty:
+                    f_val = filtro["ferramentas_necessarias"].values[0]
+                    f_str = str(f_val)
+                    total = 0.0
+                    for f in f_str.split(","):
+                        fl = f.strip().lower()
+                        t_name = df_tempos["nome_ferramenta"]
+                        m_t = t_name.str.lower() == fl
+                        total += df_tempos[m_t]["tempo_montagem"].sum()
+                    return total, f_str
+                return 0.0, "sem_ferramenta"
+
+            res_setup = df_raw["codigo interno"].apply(calcular_setup)
+            df_raw["setup (min)"], df_raw["ferramental_grupo"] = zip(*res_setup)
+
+            sort_cols = ["data de entrega", "ferramental_grupo"]
+            df_seq = df_raw.sort_values(by=
