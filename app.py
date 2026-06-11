@@ -58,24 +58,6 @@ def fim_norm(ini, mins):
     return data
 
 
-def calc_setup(cod):
-    c_str = str(cod).strip()
-    nd = df_desenhos["numero_desenho"]
-    mask = nd.astype(str).str.strip() == c_str
-    f = df_desenhos[mask]
-    if f.empty:
-        return 0.0, "sem_ferramenta"
-    f_v = f["ferramentas_necessarias"].values[0]
-    f_str = str(f_v)
-    tot = 0.0
-    for ft in f_str.split(","):
-        fl = ft.strip().lower()
-        nf = df_tempos["nome_ferramenta"]
-        m_t = nf.str.lower() == fl
-        tot += df_tempos[m_t]["tempo_montagem"].sum()
-    return tot, f_str
-
-
 opts = []
 opts.append("🚀 Sequenciamento")
 opts.append("🔧 Tabela Tempos")
@@ -105,6 +87,23 @@ if menu == "🚀 Sequenciamento":
             q_col = df_raw["quantidade"]
             q_num = pd.to_numeric(q_col, errors="coerce")
             df_raw["quantidade"] = q_num.fillna(0)
+
+            def calc_setup(cod):
+                c_str = str(cod).strip()
+                nd = df_desenhos["numero_desenho"]
+                mask = nd.astype(str).str.strip() == c_str
+                f = df_desenhos[mask]
+                if not f.empty:
+                    f_v = f["ferramentas_necessarias"].values[0]
+                    f_str = str(f_v)
+                    tot = 0.0
+                    for ft in f_str.split(","):
+                        fl = ft.strip().lower()
+                        nf = df_tempos["nome_ferramenta"]
+                        m_t = nf.str.lower() == fl
+                        tot += df_tempos[m_t]["tempo_montagem"].sum()
+                    return tot, f_str
+                return 0.0, "sem_ferramenta"
 
             res = df_raw["codigo interno"].apply(calc_setup)
             df_raw["setup (min)"], df_raw["ferramental_grupo"] = zip(
@@ -149,12 +148,14 @@ if menu == "🚀 Sequenciamento":
             agenda[m]["data"] = today
             agenda[m]["ferramental"] = ""
 
-        maq_aloc = []
-        d_ini = []
-        d_fim = []
-        st_ent = []
-        set_reais = []
-        h_tot = []
+        maq_aloc, d_ini, d_fim, st_ent, set_reais, h_tot = (
+            [],
+            [],
+            [],
+            [],
+            [],
+            [],
+        )
         items = df_seq.to_dict("records")
 
         for r in items:
