@@ -58,7 +58,10 @@ def fim_norm(ini, mins):
     return data
 
 
-opts = ["🚀 Sequenciamento", "🔧 Tabela Tempos", "📐 Tabela Desenhos"]
+opts = []
+opts.append("🚀 Sequenciamento")
+opts.append("🔧 Tabela Tempos")
+opts.append("📐 Tabela Desenhos")
 menu = st.sidebar.radio("Navegação", opts)
 
 if menu == "🚀 Sequenciamento":
@@ -90,43 +93,4 @@ if menu == "🚀 Sequenciamento":
                 nd = df_desenhos["numero_desenho"]
                 mask = nd.astype(str).str.strip() == c_str
                 f = df_desenhos[mask]
-                if not f.empty:
-                    f_v = f["ferramentas_necessarias"].values[0]
-                    f_str = str(f_v)
-                    tot = 0.0
-                    for ft in f_str.split(","):
-                        fl = ft.strip().lower()
-                        nf = df_tempos["nome_ferramenta"]
-                        m_t = nf.str.lower() == fl
-                        tot += df_tempos[m_t]["tempo_montagem"].sum()
-                    return tot, f_str
-                return 0.0, "sem_ferramenta"
-
-            res = df_raw["codigo interno"].apply(calc_setup)
-            df_raw["setup (min)"], df_raw["ferramental_grupo"] = zip(
-                *res
-            )
-
-            by_cols = ["data de entrega", "ferramental_grupo"]
-            df_raw = df_raw.sort_values(by=by_cols).copy()
-            df_raw["Ordem"] = range(1, len(df_raw) + 1)
-            ss["df_pcp"] = df_raw
-
-        st.write("### ✏️ Sequenciamento Manual")
-
-        dis_cols = []
-        for c in ss["df_pcp"].columns:
-            if c != "Ordem":
-                dis_cols.append(c)
-
-        ed_args = {}
-        ed_args["data"] = ss["df_pcp"]
-        ed_args["disabled"] = dis_cols
-        ed_args["use_container_width"] = True
-        ed_args["key"] = "editor_pcp"
-
-        df_editado = st.data_editor(**ed_args)
-        df_seq = df_editado.sort_values(by=["Ordem"]).copy()
-        today = dt.date.today()
-
-        m_list =
+                if not f.empty
