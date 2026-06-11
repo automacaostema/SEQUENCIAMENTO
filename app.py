@@ -58,10 +58,7 @@ def fim_norm(ini, mins):
     return data
 
 
-opts = []
-opts.append("🚀 Sequenciamento")
-opts.append("🔧 Tabela Tempos")
-opts.append("📐 Tabela Desenhos")
+opts = ["🚀 Sequenciamento", "🔧 Tabela Tempos", "📐 Tabela Desenhos"]
 menu = st.sidebar.radio("Navegação", opts)
 
 if menu == "🚀 Sequenciamento":
@@ -110,9 +107,7 @@ if menu == "🚀 Sequenciamento":
                 *res
             )
 
-            by_cols = []
-            by_cols.append("data de entrega")
-            by_cols.append("ferramental_grupo")
+            by_cols = ["data de entrega", "ferramental_grupo"]
             df_raw = df_raw.sort_values(by=by_cols).copy()
             df_raw["Ordem"] = range(1, len(df_raw) + 1)
             ss["df_pcp"] = df_raw
@@ -124,29 +119,28 @@ if menu == "🚀 Sequenciamento":
             if c != "Ordem":
                 dis_cols.append(c)
 
-        df_editado = st.data_editor(
-            data=ss["df_pcp"],
-            disabled=dis_cols,
-            use_container_width=True,
-            key="editor_pcp",
-        )
+        ed_args = {}
+        ed_args["data"] = ss["df_pcp"]
+        ed_args["disabled"] = dis_cols
+        ed_args["use_container_width"] = True
+        ed_args["key"] = "editor_pcp"
 
-        by_ord = []
-        by_ord.append("Ordem")
-        df_seq = df_editado.sort_values(by=by_ord).copy()
+        df_editado = st.data_editor(**ed_args)
+        df_seq = df_editado.sort_values(by=["Ordem"]).copy()
         today = dt.date.today()
 
-        m_list = []
-        m_list.append("Torno GL 170G - 1")
-        m_list.append("Torno GL 170G - 2")
-        m_list.append("Torno Centur - 1")
-        m_list.append("Torno Centur - 2")
+        m_list = [
+            "Torno GL 170G - 1",
+            "Torno GL 170G - 2",
+            "Torno Centur - 1",
+            "Torno Centur - 2",
+        ]
 
         agenda = {}
-        for m in m_list:
-            agenda[m] = {}
-            agenda[m]["data"] = today
-            agenda[m]["ferramental"] = ""
+        agenda["Torno GL 170G - 1"] = {"data": today, "ferramental": ""}
+        agenda["Torno GL 170G - 2"] = {"data": today, "ferramental": ""}
+        agenda["Torno Centur - 1"] = {"data": today, "ferramental": ""}
+        agenda["Torno Centur - 2"] = {"data": today, "ferramental": ""}
 
         maq_aloc, d_ini, d_fim, st_ent, set_reais, h_tot = (
             [],
@@ -221,10 +215,7 @@ if menu == "🚀 Sequenciamento":
         f_dt = pd.to_datetime(df_seq["Fim"])
         df_seq["Mês/Ano"] = f_dt.dt.to_period("M").astype(str)
 
-        by_g = []
-        by_g.append("Mês/Ano")
-        by_g.append("Máquina")
-        grp = df_seq.groupby(by_g)
+        grp = df_seq.groupby(["Mês/Ano", "Máquina"])
         df_mes = grp["Total (Horas)"].sum().reset_index()
         df_mes["Horas Disponíveis"] = 157.5
 
@@ -235,19 +226,16 @@ if menu == "🚀 Sequenciamento":
 
         st.write("## 📊 Ocupação Real")
 
-        y_lbls = []
-        y_lbls.append("Total (Horas)")
-        y_lbls.append("Saldo Disponível")
+        fig_args = {}
+        fig_args["data_frame"] = df_mes
+        fig_args["x"] = "Mês/Ano"
+        fig_args["y"] = ["Total (Horas)", "Saldo Disponível"]
+        fig_args["facet_col"] = "Máquina"
+        fig_args["facet_col_wrap"] = 2
+        fig_args["title"] = "Horas"
+        fig_args["barmode"] = "stack"
 
-        fig = px.bar(
-            data_frame=df_mes,
-            x="Mês/Ano",
-            y=y_lbls,
-            facet_col="Máquina",
-            facet_col_wrap=2,
-            title="Horas",
-            barmode="stack",
-        )
+        fig = px.bar(**fig_args)
         st.plotly_chart(fig, use_container_width=True)
 
         st.divider()
@@ -258,20 +246,13 @@ if menu == "🚀 Sequenciamento":
             with abas[i]:
                 mask_m = df_seq["Máquina"] == maq
                 df_m = df_seq[mask_m]
-
-                drop_cols = []
-                drop_cols.append("Máquina")
-                drop_cols.append("Mês/Ano")
-                df_m = df_m.drop(columns=drop_cols)
-
-                f_cols = []
-                f_cols.append("Status")
-                f_cols.append("Início")
-                f_cols.append("Fim")
-                f_cols.append("data de entrega")
-                f_cols.append("Total (Horas)")
-                f_cols.append("setup (min)")
-
+                df_m = df_m.drop(columns=["Máquina", "Mês/Ano"])
+                f_cols = ["Status", "Início", "Fim"]
+                f_cols += [
+                    "data de entrega",
+                    "Total (Horas)",
+                    "setup (min)",
+                ]
                 cols = list(f_cols)
                 for c in df_m.columns:
                     if c not in f_cols:
