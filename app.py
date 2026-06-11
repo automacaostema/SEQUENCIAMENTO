@@ -7,13 +7,6 @@ from supabase import create_client
 st.set_page_config(layout="wide")
 st.title("🚀 PCP Stema")
 
-# Sidebar gerada no topo para garantir que a tela nunca fique em branco
-opts = []
-opts.append("🚀 Sequenciamento")
-opts.append("🔧 Tabela Tempos")
-opts.append("📐 Tabela Desenhos")
-menu = st.sidebar.radio("Navegação", opts)
-
 sec = st.secrets
 url = sec["SUPABASE_URL"]
 key = sec["SUPABASE_KEY"]
@@ -22,15 +15,11 @@ client = create_client(url, key)
 
 @st.cache_data(ttl=300)
 def carregar_dados():
-    try:
-        t_tbl = client.table("tabela_tempos")
-        d_tbl = client.table("tabela_desenhos")
-        t_data = t_tbl.select("*").execute().data
-        d_data = d_tbl.select("*").execute().data
-        return pd.DataFrame(t_data), pd.DataFrame(d_data)
-    except Exception as e:
-        st.error("Erro de conexão com o banco de dados!")
-        return pd.DataFrame(), pd.DataFrame()
+    t_tbl = client.table("tabela_tempos")
+    d_tbl = client.table("tabela_desenhos")
+    t_data = t_tbl.select("*").execute().data
+    d_data = d_tbl.select("*").execute().data
+    return pd.DataFrame(t_data), pd.DataFrame(d_data)
 
 
 df_tempos, df_desenhos = carregar_dados()
@@ -70,8 +59,6 @@ def fim_norm(ini, mins):
 
 
 def calc_setup(cod):
-    if df_desenhos.empty:
-        return 0.0, "sem_ferramenta"
     c_str = str(cod).strip()
     nd = df_desenhos["numero_desenho"]
     mask = nd.astype(str).str.strip() == c_str
@@ -88,6 +75,12 @@ def calc_setup(cod):
         tot += df_tempos[m_t]["tempo_montagem"].sum()
     return tot, f_str
 
+
+opts = []
+opts.append("🚀 Sequenciamento")
+opts.append("🔧 Tabela Tempos")
+opts.append("📐 Tabela Desenhos")
+menu = st.sidebar.radio("Navegação", opts)
 
 if menu == "🚀 Sequenciamento":
     up = st.file_uploader("Planilha", type=["xlsx", "csv"])
@@ -286,32 +279,30 @@ if menu == "🚀 Sequenciamento":
 
 elif menu == "🔧 Tabela Tempos":
     st.title("🔧 Configuração de Tempos")
-    if df_tempos.empty:
-        st.error("Não foi possível carregar os dados do Supabase.")
-    else:
-        df_t_ed = st.data_editor(
-            df_tempos,
-            use_container_width=True,
-            num_rows="dynamic",
-            key="edit_tempos_db",
-        )
-        if st.button("💾 Atualizar Banco (Tempos)"):
-            dict_t = df_t_ed.to_dict(orient="records")
-            client.table("tabela_tempos").upsert(dict_t).execute()
-            st.success("Banco de Tempos Atualizado!")
+    res = client.table("tabela_tempos").select("*").execute()
+    df_t = pd.DataFrame(res.data)
+    df_t_ed = st.data_editor(
+        df_t,
+        use_container_width=True,
+        num_rows="dynamic",
+        key="edit_tempos_db",
+    )
+    if st.button("💾 Atualizar Banco (Tempos)"):
+        dict_t = df_t_ed.to_dict(orient="records")
+        client.table("tabela_tempos").upsert(dict_t).execute()
+        st.success("Banco de Tempos Atualizado!")
 
 elif menu == "📐 Tabela Desenhos":
     st.title("📐 Configuração de Desenhos")
-    if df_desenhos.empty:
-        st.error("Não foi possível carregar os dados do Supabase.")
-    else:
-        df_d_ed = st.data_editor(
-            df_desenhos,
-            use_container_width=True,
-            num_rows="dynamic",
-            key="edit_desenhos_db",
-        )
-        if st.button("💾 Atualizar Banco (Desenhos)"):
-            dict_d = df_d_ed.to_dict(orient="records")
-            client.table("tabela_desenhos").upsert(dict_d).execute()
-            st.success("Banco de Desenhos Atualizado!")
+    res = client.table("tabela_desenhos").select("*").execute()
+    df_d = pd.DataFrame(res.data)
+    df_d_ed = st.data_editor(
+        df_d,
+        use_container_width=True,
+        num_rows="dynamic",
+        key="edit_desenhos_db",
+    )
+    if st.button("💾 Atualizar Banco (Desenhos)"):
+        dict_d = df_d_ed.to_dict(orient="records")
+        client.table("tabela_desenhos").upsert(dict_d).execute()
+        st.success("Banco de Desenhos Updated!")
