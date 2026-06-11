@@ -7,7 +7,11 @@ from supabase import create_client
 st.set_page_config(layout="wide")
 st.title("🚀 PCP Stema")
 
-opts = ["🚀 Sequenciamento", "🔧 Tabela Tempos", "📐 Tabela Desenhos"]
+opts = [
+    "🚀 Sequenciamento",
+    "🔧 Tabela Tempos",
+    "📐 Tabela Desenhos",
+]
 menu = st.sidebar.radio("Navegação", opts)
 
 sec = st.secrets
@@ -16,7 +20,6 @@ key = sec["SUPABASE_KEY"]
 client = create_client(url, key)
 
 
-@st.cache_data(ttl=300)
 def carregar_dados():
     try:
         t_tbl = client.table("tabela_tempos")
@@ -24,7 +27,8 @@ def carregar_dados():
         t_data = t_tbl.select("*").execute().data
         d_data = d_tbl.select("*").execute().data
         return pd.DataFrame(t_data), pd.DataFrame(d_data)
-    except:
+    except Exception as e:
+        st.error(f"Erro de conexão: {e}")
         return pd.DataFrame(), pd.DataFrame()
 
 
@@ -89,8 +93,6 @@ if menu == "🚀 Sequenciamento":
         check = False
         if "df_pcp" not in ss:
             check = True
-        if "f_name" not in ss:
-            check = True
         if ss.get("f_name") != up.name:
             check = True
 
@@ -109,7 +111,7 @@ if menu == "🚀 Sequenciamento":
                 missing = [c for c in req if c not in df_raw.columns]
                 
                 if missing:
-                    st.error(f"Colunas ausentes no arquivo: {missing}")
+                    st.error(f"Faltam colunas: {missing}")
                 else:
                     t_uni = df_raw["tempo unidade"].apply(limpar_tempo)
                     df_raw["tempo unitário (min)"] = t_uni
@@ -118,25 +120,26 @@ if menu == "🚀 Sequenciamento":
                     q_num = pd.to_numeric(q_col, errors="coerce")
                     df_raw["quantidade"] = q_num.fillna(0)
 
-                    res = df_raw["codigo interno"].apply(
-                        lambda x: calc_setup(x, df_tempos, df_desenhos)
-                    )
-                    df_raw["setup (min)"], df_raw["ferramental_grupo"] = zip(*res)
+                    setups = []
+                    grupos = []
+                    for cod in df_raw["codigo interno"]:
+                        s_m, g_f = calc_setup(cod, df_tempos, df_desenhos)
+                        setups.append(s_m)
+                        grupos.append(g_f)
+                    
+                    df_raw["setup (min)"] = setups
+                    df_raw["ferramental_grupo"] = grupos
 
                     by_cols = ["data de entrega", "ferramental_grupo"]
                     df_raw = df_raw.sort_values(by=by_cols).copy()
                     df_raw["Ordem"] = range(1, len(df_raw) + 1)
                     ss["df_pcp"] = df_raw
             except Exception as e:
-                st.error(f"Erro ao processar planilha: {e}")
+                st.error(f"Erro no Excel: {e}")
 
         if "df_pcp" in ss:
             st.write("### ✏️ Sequenciamento Manual")
-
-            dis_cols = []
-            for c in ss["df_pcp"].columns:
-                if c != "Ordem":
-                    dis_cols.append(c)
+            dis_cols = [c for c in ss["df_pcp"].columns if c != "Ordem"]
 
             df_editado = st.data_editor(
                 data=ss["df_pcp"],
@@ -159,12 +162,9 @@ if menu == "🚀 Sequenciamento":
             for m in m_list:
                 agenda[m] = {"data": today, "ferramental": ""}
 
-            maq_aloc = []
-            d_ini = []
-            d_fim = []
-            st_ent = []
-            set_reais = []
-            h_tot = []
+            maq_aloc, d_ini, d_fim, st_ent, set_reais, h_tot = (
+                [], [], [], [], [], []
+            )
             items = df_seq.to_dict("records")
 
             for r in items:
@@ -190,17 +190,9 @@ if menu == "🚀 Sequenciamento":
                 fi_m2 = fim_norm(st_m2, mi_m2)
 
                 if fi_m1 <= fi_m2:
-                    maq_ch = m1
-                    st_date = st_m1
-                    ed_date = fi_m1
-                    se_at = se_m1
-                    mi_fi = mi_m1
+                    maq_ch, st_date, ed_date, se_at, mi_fi = m1, st_m1, fi_m1, se_m1, mi_m1
                 else:
-                    maq_ch = m2
-                    st_date = st_m2
-                    ed_date = fi_m2
-                    se_at = se_m2
-                    mi_fi = mi_m2
+                    maq_ch, st_date, ed_date, se_at, mi_fi = m2, st_m2, fi_m2, se_m2, mi_m2
 
                 lim = pd.to_datetime(r["data de entrega"]).date()
                 if ed_date <= lim:
@@ -227,4 +219,90 @@ if menu == "🚀 Sequenciamento":
             df_seq["setup (min)"] = set_reais
             df_seq["Total (Horas)"] = h_tot
 
-            f_dt = pd.
+            f_dt = pd.to_datetime(df_seq["Fim"])
+            df_seq["Mês/Ano"] = f_dt.dt.to_period("M").astype(str)
+
+            df_mes = df_seq.groupby(["Mês/Ano", "Máquina"])["Total (Horas)"].sum().reset_index()
+            df_mes["Horas Disponíveis"] = 157.5
+
+            h_dis = df_mes["Horas Disponíveis"]
+            t_hrs = df_mes["Total (Horas)"]
+            diff = h_dis - t_hrs
+            df_mes["Saldo Disponível"] = diff.clip(lower=0)
+
+            st.write("## 📊 Ocupação Real")
+
+            fig = px.bar(
+                data_frame=df_mes,
+                x="Mês/Ano",
+                y=["Total (Horas)", "Saldo Disponível"],
+                facet_col="Máquina",
+                facet_col_wrap=2,
+                title="Horas",
+                barmode="stack",
+            )
+            st.plotly_chart(fig, use_container_width=True)
+
+            st.divider()
+            st.write("## 🗓️ Filas de Trabalho")
+            abas = st.tabs(m_list)
+
+            for i, maq in enumerate(m_list):
+                with abas[i]:
+                    mask_m = df_seq["Máquina"] == maq
+                    df_m = df_seq[mask_m]
+
+                    df_m = df_m.drop(columns=["Máquina", "Mês/Ano"])
+                    f_cols = ["Status", "Início", "Fim", "data de entrega", "Total (Horas)", "setup (min)"]
+
+                    cols = list(f_cols)
+                    for c in df_m.columns:
+                        if c not in f_cols:
+                            cols.append(c)
+                    st.dataframe(df_m[cols], use_container_width=True)
+
+elif menu == "🔧 Tabela Tempos":
+    st.title("🔧 Configuração de Tempos")
+    df_tempos, _ = carregar_dados()
+    if df_tempos.empty:
+        st.error("Não foi possível carregar os dados.")
+    else:
+        df_t_ed = st.data_editor(
+            df_tempos,
+            use_container_width=True,
+            num_rows="dynamic",
+            key="edit_tempos_db",
+        )
+        if st.button("💾 Atualizar Banco (Tempos)"):
+            dict_t = []
+            for r in df_t_ed.to_dict(orient="records"):
+                limpo = {k: (v if pd.notna(v) else None) for k, v in r.items()}
+                if "id" in limpo and limpo["id"] is None:
+                    del limpo["id"]
+                dict_t.append(limpo)
+
+            client.table("tabela_tempos").upsert(dict_t).execute()
+            st.success("Banco de Tempos Atualizado!")
+
+elif menu == "📐 Tabela Desenhos":
+    st.title("📐 Configuração de Desenhos")
+    _, df_desenhos = carregar_dados()
+    if df_desenhos.empty:
+        st.error("Não foi possível carregar os dados.")
+    else:
+        df_d_ed = st.data_editor(
+            df_desenhos,
+            use_container_width=True,
+            num_rows="dynamic",
+            key="edit_desenhos_db",
+        )
+        if st.button("💾 Atualizar Banco (Desenhos)"):
+            dict_d = []
+            for r in df_d_ed.to_dict(orient="records"):
+                limpo = {k: (v if pd.notna(v) else None) for k, v in r.items()}
+                if "id" in limpo and limpo["id"] is None:
+                    del limpo["id"]
+                dict_d.append(limpo)
+
+            client.table("tabela_desenhos").upsert(dict_d).execute()
+            st.success("Banco de Desenhos Updated!")
