@@ -7,7 +7,6 @@ from supabase import create_client
 st.set_page_config(layout="wide")
 st.title("🚀 PCP Stema")
 
-# Conexão
 sec = st.secrets
 client = create_client(sec["SUPABASE_URL"], sec["SUPABASE_KEY"])
 
@@ -99,13 +98,17 @@ if menu == "🚀 Sequenciamento":
         df_seq = pd.DataFrame(res_lista)
         df_seq["Mês/Ano"] = pd.to_datetime(df_seq["Fim"]).dt.to_period("M").astype(str)
 
-        # Gráfico (Restaurado)
+        # Gráfico Ocupado vs Livre
         st.write("## 📊 Ocupação Real")
         df_mes = df_seq.groupby(["Mês/Ano", "Máquina"])["Total (Horas)"].sum().reset_index()
-        fig = px.bar(df_mes, x="Mês/Ano", y="Total (Horas)", facet_col="Máquina", facet_col_wrap=2, barmode="stack")
+        df_mes["Horas Disponíveis"] = 157.5
+        df_mes["Saldo Disponível"] = (df_mes["Horas Disponíveis"] - df_mes["Total (Horas)"]).clip(lower=0)
+        
+        fig = px.bar(df_mes, x="Mês/Ano", y=["Total (Horas)", "Saldo Disponível"], 
+                     facet_col="Máquina", facet_col_wrap=2, barmode="stack", title="Horas Ocupadas vs. Disponíveis")
         st.plotly_chart(fig, use_container_width=True)
 
-        # Filas com nova ordem
+        # Filas na ordem solicitada
         st.write("## 🗓️ Filas de Trabalho")
         abas = st.tabs(m_list)
         col_ordem = ["codigo interno", "n servico", "Status", "data de entrega", "Início", "Fim", "quantidade", "setup (min)", "Total (Horas)", "ferramental_grupo"]
@@ -113,11 +116,5 @@ if menu == "🚀 Sequenciamento":
         for i, maq in enumerate(m_list):
             with abas[i]:
                 df_m = df_seq[df_seq["Máquina"] == maq].copy()
-                st.dataframe(df_m[[c for c in col_ordem if c in df_m.columns]], use_container_width=True)
-
-# --- TABELAS ---
-elif menu in ["🔧 Tabela Tempos", "📐 Tabela Desenhos"]:
-    tabela = "tabela_tempos" if menu == "🔧 Tabela Tempos" else "tabela_desenhos"
-    df = pd.DataFrame(client.table(tabela).select("*").execute().data)
-    df_edit = st.data_editor(df, num_rows="dynamic", use_container_width=True)
-    if st.button("💾 Salvar"): salvar_banco(tabela, df_edit)
+                if "tempo unitário (min)" in df_m.columns: df_m = df_m.drop(columns=["tempo unitário (min)"])
+                st.dataframe(df_m[[c for c in col_ordem if c in df_m.columns]], use_container_width=
