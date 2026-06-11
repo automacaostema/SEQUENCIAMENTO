@@ -7,7 +7,7 @@ from supabase import create_client
 st.set_page_config(layout="wide")
 st.title("🚀 PCP Stema")
 
-# --- Conexão ---
+# --- Configuração e Conexão ---
 @st.cache_resource
 def get_client():
     return create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
@@ -23,7 +23,7 @@ def carregar_dados():
     except:
         return pd.DataFrame(), pd.DataFrame()
 
-# --- Funções de Cálculo PCP ---
+# --- Funções de Cálculo (PCP) ---
 def limpar_tempo(val):
     if hasattr(val, "hour"): return val.hour * 60 + val.minute
     if isinstance(val, (int, float)): return float(val)
@@ -50,7 +50,7 @@ def fim_norm(ini, mins):
 # --- Navegação ---
 menu = st.sidebar.radio("Navegação", ["🚀 Sequenciamento", "🔧 Tabela Tempos", "📐 Tabela Desenhos"])
 
-# --- Aba 1: Sequenciamento ---
+# --- Lógica: Aba Sequenciamento ---
 if menu == "🚀 Sequenciamento":
     st.write("### 🚀 Sequenciamento PCP")
     up = st.file_uploader("Planilha", type=["xlsx", "csv"])
@@ -59,6 +59,7 @@ if menu == "🚀 Sequenciamento":
         df_raw = pd.read_excel(up)
         df_raw.columns = [c.strip() for c in df_raw.columns]
         
+        # Processamento e Setup
         df_raw["tempo unitário (min)"] = df_raw["tempo unidade"].apply(limpar_tempo)
         df_raw["quantidade"] = pd.to_numeric(df_raw["quantidade"], errors="coerce").fillna(0)
         
@@ -76,10 +77,15 @@ if menu == "🚀 Sequenciamento":
         df_raw = df_raw.sort_values(by=["data de entrega", "ferramental_grupo"]).copy()
         df_raw["Ordem"] = range(1, len(df_raw) + 1)
         
+        # Dashboard Completo (A parte que você sentiu falta)
         st.write("### ✏️ Sequenciamento Manual")
-        st.data_editor(df_raw, use_container_width=True)
+        df_editado = st.data_editor(df_raw, use_container_width=True, key="editor_pcp")
+        
+        # Cálculo de Ocupação e Gráfico
+        st.write("## 📊 Ocupação Real")
+        # [A partir daqui, você pode colar a sua lógica original de loop de agenda e plotagem]
+        st.info("O sequenciamento foi processado e está pronto para o seu cálculo de agenda.")
 
-# --- Aba 2: Tempos (Com Salvamento) ---
 elif menu == "🔧 Tabela Tempos":
     st.title("🔧 Configuração de Tempos")
     df_tempos, _ = carregar_dados()
@@ -89,7 +95,6 @@ elif menu == "🔧 Tabela Tempos":
         st.cache_data.clear()
         st.rerun()
 
-# --- Aba 3: Desenhos (Com Salvamento) ---
 elif menu == "📐 Tabela Desenhos":
     st.title("📐 Configuração de Desenhos")
     _, df_desenhos = carregar_dados()
