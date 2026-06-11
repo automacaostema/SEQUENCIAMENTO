@@ -7,6 +7,7 @@ from supabase import create_client
 st.set_page_config(layout="wide")
 st.title("🚀 PCP Stema")
 
+# Conexão
 sec = st.secrets
 client = create_client(sec["SUPABASE_URL"], sec["SUPABASE_KEY"])
 
@@ -59,6 +60,7 @@ if menu == "🚀 Sequenciamento":
     if up:
         df_raw = pd.read_excel(up)
         df_raw.columns = [c.strip() for c in df_raw.columns]
+        
         df_tempos = pd.DataFrame(client.table("tabela_tempos").select("*").execute().data)
         df_desenhos = pd.DataFrame(client.table("tabela_desenhos").select("*").execute().data)
         
@@ -97,20 +99,20 @@ if menu == "🚀 Sequenciamento":
         df_seq = pd.DataFrame(res_lista)
         df_seq["Mês/Ano"] = pd.to_datetime(df_seq["Fim"]).dt.to_period("M").astype(str)
 
-        # Gráfico
+        # Gráfico (Restaurado)
         st.write("## 📊 Ocupação Real")
         df_mes = df_seq.groupby(["Mês/Ano", "Máquina"])["Total (Horas)"].sum().reset_index()
         fig = px.bar(df_mes, x="Mês/Ano", y="Total (Horas)", facet_col="Máquina", facet_col_wrap=2, barmode="stack")
         st.plotly_chart(fig, use_container_width=True)
 
-        # Filas na ordem solicitada
+        # Filas com nova ordem
         st.write("## 🗓️ Filas de Trabalho")
-        col_ordem = ["codigo interno", "n servico", "Status", "data de entrega", "Início", "Fim", "quantidade", "setup (min)", "tempo unidade", "Total (Horas)", "ferramental_grupo"]
         abas = st.tabs(m_list)
+        col_ordem = ["codigo interno", "n servico", "Status", "data de entrega", "Início", "Fim", "quantidade", "setup (min)", "Total (Horas)", "ferramental_grupo"]
+        
         for i, maq in enumerate(m_list):
             with abas[i]:
                 df_m = df_seq[df_seq["Máquina"] == maq].copy()
-                if "tempo unitário (min)" in df_m.columns: df_m = df_m.drop(columns=["tempo unitário (min)"])
                 st.dataframe(df_m[[c for c in col_ordem if c in df_m.columns]], use_container_width=True)
 
 # --- TABELAS ---
