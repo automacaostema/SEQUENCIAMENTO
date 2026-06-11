@@ -5,7 +5,7 @@ import streamlit as st
 from supabase import create_client
 
 st.set_page_config(page_title="PCP", layout="wide")
-st.title("🚀 Sequenciamento Otimizado")
+st.title("🚀 Sequenciamento - Restauração")
 
 sec = st.secrets
 supabase = create_client(sec["SUPABASE_URL"], sec["SUPABASE_KEY"])
@@ -52,17 +52,30 @@ def calcular_fim_normal(ini, mins):
 menu = st.sidebar.radio("Navegação", ["🚀 Sequenciamento", "🔧 Tabela Tempos", "📐 Tabela Desenhos"])
 
 if menu == "🚀 Sequenciamento":
-    st.title("🚀 Sequenciamento Otimizado")
     up = st.file_uploader("Planilha", type=["xlsx", "csv"])
-
     if up:
-        if "df_pcp" not in st.session_state or "f_name" not in st.session_state or st.session_state.f_name != up.name:
-            st.session_state.f_name = up.name
-            df_raw = pd.read_excel(up)
-            df_raw.columns = [c.strip() for c in df_raw.columns]
-            df_raw["tempo unitário (min)"] = df_raw["tempo unidade"].apply(limpar_tempo)
-            df_raw["quantidade"] = pd.to_numeric(df_raw["quantidade"], errors="coerce").fillna(0)
+        df_raw = pd.read_excel(up)
+        df_raw.columns = [c.strip() for c in df_raw.columns]
+        df_raw["tempo unitário (min)"] = df_raw["tempo unidade"].apply(limpar_tempo)
+        df_raw["quantidade"] = pd.to_numeric(df_raw["quantidade"], errors="coerce").fillna(0)
 
-            def calcular_setup(cod):
-                c_str = str(cod).strip()
-                mask = df_desenhos
+        def calcular_setup(cod):
+            c_str = str(cod).strip()
+            mask = df_desenhos["numero_desenho"].astype(str).str.strip() == c_str
+            filtro = df_desenhos[mask]
+            if not filtro.empty:
+                f_str = str(filtro["ferramentas_necessarias"].values[0])
+                total = 0.0
+                for f in f_str.split(","):
+                    fl = f.strip().lower()
+                    m_t = df_tempos["nome_ferramenta"].str.lower() == fl
+                    total += df_tempos[m_t]["tempo_montagem"].sum()
+                return total, f_str
+            return 0.0, "sem_ferramenta"
+
+        res_setup = df_raw["codigo interno"].apply(calcular_setup)
+        df_raw["setup (min)"], df_raw["ferramental_grupo"] = zip(*res_setup)
+
+        df_seq = df_raw.sort_values(by=["data de entrega", "ferramental_grupo"]).copy()
+        today = datetime.date.today()
+        m_list =
