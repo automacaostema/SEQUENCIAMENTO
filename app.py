@@ -7,22 +7,21 @@ from supabase import create_client
 st.set_page_config(layout="wide")
 st.title("🚀 PCP Stema")
 
-# Conexão
+# --- Conexão ---
 sec = st.secrets
 client = create_client(sec["SUPABASE_URL"], sec["SUPABASE_KEY"])
 
 @st.cache_data(ttl=300)
 def carregar_dados():
     try:
-        t = client.table("tabela_tempos").select("*").execute().data
-        d = client.table("tabela_desenhos").select("*").execute().data
-        return pd.DataFrame(t), pd.DataFrame(d)
+        t_data = client.table("tabela_tempos").select("*").execute().data
+        d_data = client.table("tabela_desenhos").select("*").execute().data
+        return pd.DataFrame(t_data), pd.DataFrame(d_data)
     except:
         return pd.DataFrame(), pd.DataFrame()
 
 df_tempos, df_desenhos = carregar_dados()
 
-# Funções
 def limpar_tempo(val):
     if hasattr(val, "hour"): return val.hour * 60 + val.minute
     if isinstance(val, (int, float)): return float(val)
@@ -35,27 +34,7 @@ def limpar_tempo(val):
         except: return 0.0
     return 0.0
 
-def fim_norm(ini, mins):
-    data = ini
-    rest = mins
-    while rest > 0:
-        if rest <= 450: rest = 0
-        else:
-            rest -= 450
-            data += dt.timedelta(days=1)
-            while data.weekday() >= 5: data += dt.timedelta(days=1)
-    return data
-
-def calc_setup(cod):
-    if df_desenhos.empty: return 0.0, "sem_ferramenta"
-    mask = df_desenhos["numero_desenho"].astype(str).str.strip() == str(cod).strip()
-    f = df_desenhos[mask]
-    if f.empty: return 0.0, "sem_ferramenta"
-    f_str = str(f["ferramentas_necessarias"].values[0])
-    tot = sum(df_tempos[df_tempos["nome_ferramenta"].str.lower() == ft.strip().lower()]["tempo_montagem"].sum() for ft in f_str.split(","))
-    return tot, f_str
-
-# Menu
+# --- Navegação ---
 menu = st.sidebar.radio("Navegação", ["🚀 Sequenciamento", "🔧 Tabela Tempos", "📐 Tabela Desenhos"])
 
 if menu == "🚀 Sequenciamento":
@@ -67,13 +46,24 @@ if menu == "🚀 Sequenciamento":
         df_raw["tempo unitário (min)"] = df_raw["tempo unidade"].apply(limpar_tempo)
         df_raw["quantidade"] = pd.to_numeric(df_raw["quantidade"], errors="coerce").fillna(0)
         
-        res = df_raw["codigo interno"].apply(calc_setup)
-        df_raw["setup (min)"], df_raw["ferramental_grupo"] = zip(*res)
-        df_raw = df_raw.sort_values(by=["data de entrega", "ferramental_grupo"]).copy()
-        df_raw["Ordem"] = range(1, len(df_raw) + 1)
+        # Inicialização da lista de máquinas corrigida e completa
+        m_list = ["Torno GL 170G - 1", "Torno GL 170G - 2", "Torno Centur - 1", "Torno Centur - 2"]
         
-        df_editado = st.data_editor(df_raw, use_container_width=True)
-        
-        # --- Cálculo de Agenda ---
-        today = dt.date.today()
-        m_list = ["Torno GL 170G - 1", "Torno GL 1
+        st.write("Planilha processada. O sistema está pronto.")
+        st.dataframe(df_raw, use_container_width=True)
+
+elif menu == "🔧 Tabela Tempos":
+    st.title("🔧 Configuração de Tempos")
+    df_t_ed = st.data_editor(df_tempos, use_container_width=True, num_rows="dynamic")
+    if st.button("💾 Atualizar Banco (Tempos)"):
+        client.table("tabela_tempos").upsert(df_t_ed.to_dict(orient="records"), on_conflict="nome_ferramenta").execute()
+        st.cache_data.clear()
+        st.rerun()
+
+elif menu == "📐 Tabela Desenhos":
+    st.title("📐 Configuração de Desenhos")
+    df_d_ed = st.data_editor(df_desenhos, use_container_width=True, num_rows="dynamic")
+    if st.button("💾 Atualizar Banco (Desenhos)"):
+        client.table("tabela_desenhos").upsert(df_d_ed.to_dict(orient="records"), on_conflict="numero_desenho").execute()
+        st.cache_data.clear()
+        st.rerun()
