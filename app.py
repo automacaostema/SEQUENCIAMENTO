@@ -7,7 +7,6 @@ from supabase import create_client
 st.set_page_config(layout="wide")
 st.title("🚀 PCP Stema")
 
-# Sidebar gerada no topo para garantir que a tela nunca fique em branco
 opts = []
 opts.append("🚀 Sequenciamento")
 opts.append("🔧 Tabela Tempos")
@@ -29,7 +28,7 @@ def carregar_dados():
         d_data = d_tbl.select("*").execute().data
         return pd.DataFrame(t_data), pd.DataFrame(d_data)
     except Exception as e:
-        st.error("Erro de conexão com o banco de dados!")
+        st.error("Erro de conexão com o banco!")
         return pd.DataFrame(), pd.DataFrame()
 
 
@@ -205,113 +204,4 @@ if menu == "🚀 Sequenciamento":
             elif lim >= today:
                 status = "⚡ No Prazo (Com Sobrecarga)"
             else:
-                status = "⚠️ ATRASADO (Prazo Vencido)"
-
-            agenda[maq_ch]["data"] = ed_date
-            agenda[maq_ch]["ferramental"] = fg
-
-            maq_aloc.append(maq_ch)
-            d_ini.append(st_date)
-            d_fim.append(ed_date)
-            st_ent.append(status)
-            set_reais.append(se_at)
-            h_tot.append(round(mi_fi / 60, 2))
-
-        df_seq["Máquina"] = maq_aloc
-        df_seq["Início"] = d_ini
-        df_seq["Fim"] = d_fim
-        df_seq["Status"] = st_ent
-        df_seq["setup (min)"] = set_reais
-        df_seq["Total (Horas)"] = h_tot
-
-        f_dt = pd.to_datetime(df_seq["Fim"])
-        df_seq["Mês/Ano"] = f_dt.dt.to_period("M").astype(str)
-
-        by_g = []
-        by_g.append("Mês/Ano")
-        by_g.append("Máquina")
-        grp = df_seq.groupby(by_g)
-        df_mes = grp["Total (Horas)"].sum().reset_index()
-        df_mes["Horas Disponíveis"] = 157.5
-
-        h_dis = df_mes["Horas Disponíveis"]
-        t_hrs = df_mes["Total (Horas)"]
-        diff = h_dis - t_hrs
-        df_mes["Saldo Disponível"] = diff.clip(lower=0)
-
-        st.write("## 📊 Ocupação Real")
-
-        y_lbls = []
-        y_lbls.append("Total (Horas)")
-        y_lbls.append("Saldo Disponível")
-
-        fig = px.bar(
-            data_frame=df_mes,
-            x="Mês/Ano",
-            y=y_lbls,
-            facet_col="Máquina",
-            facet_col_wrap=2,
-            title="Horas",
-            barmode="stack",
-        )
-        st.plotly_chart(fig, use_container_width=True)
-
-        st.divider()
-        st.write("## 🗓️ Filas de Trabalho")
-        abas = st.tabs(m_list)
-
-        for i, maq in enumerate(m_list):
-            with abas[i]:
-                mask_m = df_seq["Máquina"] == maq
-                df_m = df_seq[mask_m]
-
-                drop_cols = []
-                drop_cols.append("Máquina")
-                drop_cols.append("Mês/Ano")
-                df_m = df_m.drop(columns=drop_cols)
-
-                f_cols = []
-                f_cols.append("Status")
-                f_cols.append("Início")
-                f_cols.append("Fim")
-                f_cols.append("data de entrega")
-                f_cols.append("Total (Horas)")
-                f_cols.append("setup (min)")
-
-                cols = list(f_cols)
-                for c in df_m.columns:
-                    if c not in f_cols:
-                        cols.append(c)
-                st.dataframe(df_m[cols], use_container_width=True)
-
-elif menu == "🔧 Tabela Tempos":
-    st.title("🔧 Configuração de Tempos")
-    if df_tempos.empty:
-        st.error("Não foi possível carregar os dados do Supabase.")
-    else:
-        df_t_ed = st.data_editor(
-            df_tempos,
-            use_container_width=True,
-            num_rows="dynamic",
-            key="edit_tempos_db",
-        )
-        if st.button("💾 Atualizar Banco (Tempos)"):
-            dict_t = df_t_ed.to_dict(orient="records")
-            client.table("tabela_tempos").upsert(dict_t).execute()
-            st.success("Banco de Tempos Atualizado!")
-
-elif menu == "📐 Tabela Desenhos":
-    st.title("📐 Configuração de Desenhos")
-    if df_desenhos.empty:
-        st.error("Não foi possível carregar os dados do Supabase.")
-    else:
-        df_d_ed = st.data_editor(
-            df_desenhos,
-            use_container_width=True,
-            num_rows="dynamic",
-            key="edit_desenhos_db",
-        )
-        if st.button("💾 Atualizar Banco (Desenhos)"):
-            dict_d = df_d_ed.to_dict(orient="records")
-            client.table("tabela_desenhos").upsert(dict_d).execute()
-            st.success("Banco de Desenhos Atualizado!")
+                status = "⚠️ ATRASADO (Prazo Venc
