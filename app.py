@@ -1,76 +1,34 @@
-import datetime as dt
-import pandas as pd
-import plotly.express as px
-import streamlit as st
-from supabase import create_client
-
-st.set_page_config(layout="wide")
-st.title("🚀 PCP Stema")
-
-# --- Configuração Supabase ---
-@st.cache_resource
-def get_client():
-    return create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
-
-client = get_client()
-
-@st.cache_data(ttl=60)
-def carregar_dados():
-    t_data = client.table("tabela_tempos").select("*").execute().data
-    d_data = client.table("tabela_desenhos").select("*").execute().data
-    return pd.DataFrame(t_data), pd.DataFrame(d_data)
-
-# --- Funções do PCP ---
-def limpar_tempo(val):
-    if hasattr(val, "hour"): return val.hour * 60 + val.minute
-    if isinstance(val, (int, float)): return float(val)
-    if isinstance(val, str):
-        try:
-            p = [float(x) for x in val.split(":")]
-            if len(p) == 3: return p[0] * 60 + p[1] + (p[2] / 60.0)
-            if len(p) == 2: return p[0] + (p[1] / 60.0)
-            if len(p) == 1: return p[0]
-        except: return 0.0
-    return 0.0
-
-def fim_norm(ini, mins):
-    data = ini
-    rest = mins
-    while rest > 0:
-        if rest <= 450: rest = 0
-        else:
-            rest -= 450
-            data += dt.timedelta(days=1)
-            while data.weekday() >= 5: data += dt.timedelta(days=1)
-    return data
-
-# --- Navegação ---
-menu = st.sidebar.radio("Navegação", ["🚀 Sequenciamento", "🔧 Tabela Tempos", "📐 Tabela Desenhos"])
-
-if menu == "🚀 Sequenciamento":
-    df_tempos, df_desenhos = carregar_dados()
-    up = st.file_uploader("Planilha PCP", type=["xlsx", "csv"])
+elif menu == "🚀 Sequenciamento":
+    st.write("### 🚀 Sequenciamento PCP")
+    up = st.file_uploader("Planilha", type=["xlsx", "csv"])
     if up:
-        # Aqui entra a sua lógica original de cálculo de sequenciamento
-        st.write("Processando sequenciamento...")
-        # ... (seu código de processamento do dataframe original)
+        df_raw = pd.read_excel(up)
+        df_raw.columns = [c.strip() for c in df_raw.columns]
+        
+        # Carrega dados do banco para calcular
+        df_tempos, df_desenhos = carregar_dados()
+        
+        # Processamento
+        df_raw["tempo unitário (min)"] = df_raw["tempo unidade"].apply(limpar_tempo)
+        df_raw["quantidade"] = pd.to_numeric(df_raw["quantidade"], errors="coerce").fillna(0)
+        
+        # Cálculo de setup (usando a função que você já tinha)
+        def calc_setup_local(cod):
+            if df_desenhos.empty: return 0.0, "sem_ferramenta"
+            c_str = str(cod).strip()
+            f = df_desenhos[df_desenhos["numero_desenho"].astype(str).str.strip() == c_str]
+            if f.empty: return 0.0, "sem_ferramenta"
+            f_str = str(f["ferramentas_necessarias"].values[0])
+            tot = sum(df_tempos[df_tempos["nome_ferramenta"].str.lower() == ft.strip().lower()]["tempo_montagem"].sum() for ft in f_str.split(","))
+            return tot, f_str
 
-elif menu == "🔧 Tabela Tempos":
-    st.title("🔧 Configuração de Tempos")
-    df_tempos, _ = carregar_dados()
-    df_editado = st.data_editor(df_tempos, num_rows="dynamic", use_container_width=True)
-    if st.button("💾 Salvar Tempos"):
-        dados = df_editado.to_dict(orient="records")
-        client.table("tabela_tempos").upsert(dados, on_conflict="nome_ferramenta").execute()
-        st.cache_data.clear()
-        st.rerun()
-
-elif menu == "📐 Tabela Desenhos":
-    st.title("📐 Configuração de Desenhos")
-    _, df_desenhos = carregar_dados()
-    df_editado = st.data_editor(df_desenhos, num_rows="dynamic", use_container_width=True)
-    if st.button("💾 Salvar Desenhos"):
-        dados = df_editado.to_dict(orient="records")
-        client.table("tabela_desenhos").upsert(dados, on_conflict="numero_desenho").execute()
-        st.cache_data.clear()
-        st.rerun()
+        res = df_raw["codigo interno"].apply(calc_setup_local)
+        df_raw["setup (min)"], df_raw["ferramental_grupo"] = zip(*res)
+        
+        # Ordenação e Exibição
+        df_raw = df_raw.sort_values(by=["data de entrega", "ferramental_grupo"]).copy()
+        df_raw["Ordem"] = range(1, len(df_raw) + 1)
+        
+        st.write("### ✏️ Sequenciamento Manual")
+        df_editado = st.data_editor(df_raw, use_container_width=True)
+        st.write("Processamento concluído com base nos dados do banco.")
