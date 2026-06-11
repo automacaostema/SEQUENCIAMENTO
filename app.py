@@ -7,7 +7,6 @@ from supabase import create_client
 st.set_page_config(layout="wide")
 st.title("🚀 PCP Stema")
 
-# Sidebar gerada no topo para garantir que a tela nunca fique em branco
 opts = []
 opts.append("🚀 Sequenciamento")
 opts.append("🔧 Tabela Tempos")
@@ -144,78 +143,38 @@ if menu == "🚀 Sequenciamento":
         df_seq = df_editado.sort_values(by=by_ord).copy()
         today = dt.date.today()
 
-        m_list = []
-        m_list.append("Torno GL 170G - 1")
-        m_list.append("Torno GL 170G - 2")
-        m_list.append("Torno Centur - 1")
-        m_list.append("Torno Centur - 2")
+        m_list = ["Torno GL 170G - 1", "Torno GL 170G - 2", "Torno Centur - 1", "Torno Centur - 2"]
+        agenda = {m: {"data": today, "ferramental": ""} for m in m_list}
 
-        agenda = {}
-        for m in m_list:
-            agenda[m] = {}
-            agenda[m]["data"] = today
-            agenda[m]["ferramental"] = ""
-
-        maq_aloc = []
-        d_ini = []
-        d_fim = []
-        st_ent = []
-        set_reais = []
-        h_tot = []
-        items = df_seq.to_dict("records")
-
-        for r in items:
+        maq_aloc, d_ini, d_fim, st_ent, set_reais, h_tot = [], [], [], [], [], []
+        
+        for r in df_seq.to_dict("records"):
             fg = str(r["ferramental_grupo"])
             is_gl = "8" in fg or "9" in fg
             g_maq = "Torno GL 170G" if is_gl else "Torno Centur"
-            m1 = f"{g_maq} - 1"
-            m2 = f"{g_maq} - 2"
-
-            st_m1 = max(today, agenda[m1]["data"])
-            se_m1 = float(r["setup (min)"])
-            if agenda[m1]["ferramental"] == fg:
-                se_m1 = 0.0
-            t_u = r["tempo unitário (min)"]
-            mi_m1 = se_m1 + (t_u * r["quantidade"])
-            fi_m1 = fim_norm(st_m1, mi_m1)
-
-            st_m2 = max(today, agenda[m2]["data"])
-            se_m2 = float(r["setup (min)"])
-            if agenda[m2]["ferramental"] == fg:
-                se_m2 = 0.0
-            mi_m2 = se_m2 + (t_u * r["quantidade"])
-            fi_m2 = fim_norm(st_m2, mi_m2)
-
-            if fi_m1 <= fi_m2:
-                maq_ch = m1
-                st_date = st_m1
-                ed_date = fi_m1
-                se_at = se_m1
-                mi_fi = mi_m1
-            else:
-                maq_ch = m2
-                st_date = st_m2
-                ed_date = fi_m2
-                se_at = se_m2
-                mi_fi = mi_m2
-
+            
+            # Lógica de balanceamento: Escolhe a máquina que termina mais cedo
+            res_maq = []
+            for m in [f"{g_maq} - 1", f"{g_maq} - 2"]:
+                st_m = max(today, agenda[m]["data"])
+                se_m = float(r["setup (min)"]) if agenda[m]["ferramental"] != fg else 0.0
+                mi_m = se_m + (r["tempo unitário (min)"] * r["quantidade"])
+                res_maq.append({"nome": m, "fim": fim_norm(st_m, mi_m), "st": st_m, "se": se_m, "mi": mi_m})
+            
+            melhor = min(res_maq, key=lambda x: x["fim"])
+            
             lim = pd.to_datetime(r["data de entrega"]).date()
-            if ed_date <= lim:
-                status = "✅ No Prazo"
-            elif lim >= today:
-                status = "⚡ No Prazo (Com Sobrecarga)"
-            else:
-                status = "⚠️ ATRASADO (Prazo Vencido)"
+            status = "✅ No Prazo" if melhor["fim"] <= lim else ("⚡ No Prazo (Sobrecarga)" if lim >= today else "⚠️ ATRASADO (Vencido)")
 
-            agenda[maq_ch]["data"] = ed_date
-            agenda[maq_ch]["ferramental"] = fg
+            agenda[melhor["nome"]]["data"] = melhor["fim"]
+            agenda[melhor["nome"]]["ferramental"] = fg
 
-            maq_aloc.append(maq_ch)
-            d_ini.append(st_date)
-            d_fim.append(ed_date)
+            maq_aloc.append(melhor["nome"])
+            d_ini.append(melhor["st"])
+            d_fim.append(melhor["fim"])
             st_ent.append(status)
-            set_reais.append(se_at)
-            h_tot.append(round(mi_fi / 60, 2))
+            set_reais.append(melhor["se"])
+            h_tot.append(round(melhor["mi"] / 60, 2))
 
         df_seq["Máquina"] = maq_aloc
         df_seq["Início"] = d_ini
@@ -224,92 +183,34 @@ if menu == "🚀 Sequenciamento":
         df_seq["setup (min)"] = set_reais
         df_seq["Total (Horas)"] = h_tot
 
-        f_dt = pd.to_datetime(df_seq["Fim"])
-        df_seq["Mês/Ano"] = f_dt.dt.to_period("M").astype(str)
-
-        by_g = []
-        by_g.append("Mês/Ano")
-        by_g.append("Máquina")
-        grp = df_seq.groupby(by_g)
-        df_mes = grp["Total (Horas)"].sum().reset_index()
-        df_mes["Horas Disponíveis"] = 157.5
-
-        h_dis = df_mes["Horas Disponíveis"]
-        t_hrs = df_mes["Total (Horas)"]
-        diff = h_dis - t_hrs
-        df_mes["Saldo Disponível"] = diff.clip(lower=0)
-
-        st.write("## 📊 Ocupação Real")
-
-        y_lbls = []
-        y_lbls.append("Total (Horas)")
-        y_lbls.append("Saldo Disponível")
-
-        fig = px.bar(
-            data_frame=df_mes,
-            x="Mês/Ano",
-            y=y_lbls,
-            facet_col="Máquina",
-            facet_col_wrap=2,
-            title="Horas",
-            barmode="stack",
-        )
-        st.plotly_chart(fig, use_container_width=True)
-
         st.divider()
         st.write("## 🗓️ Filas de Trabalho")
         abas = st.tabs(m_list)
 
+        # Ordem das colunas conforme solicitado
+        col_ordem = [
+            "codigo interno", "n servico", "Status", "data de entrega", "Início", 
+            "Fim", "quantidade", "setup (min)", "Total (Horas)", "ferramental_grupo"
+        ]
+
         for i, maq in enumerate(m_list):
             with abas[i]:
-                mask_m = df_seq["Máquina"] == maq
-                df_m = df_seq[mask_m]
-
-                drop_cols = []
-                drop_cols.append("Máquina")
-                drop_cols.append("Mês/Ano")
-                df_m = df_m.drop(columns=drop_cols)
-
-                f_cols = []
-                f_cols.append("Status")
-                f_cols.append("Início")
-                f_cols.append("Fim")
-                f_cols.append("data de entrega")
-                f_cols.append("Total (Horas)")
-                f_cols.append("setup (min)")
-
-                cols = list(f_cols)
-                for c in df_m.columns:
-                    if c not in f_cols:
-                        cols.append(c)
-                st.dataframe(df_m[cols], use_container_width=True)
+                df_m = df_seq[df_seq["Máquina"] == maq].copy()
+                cols_finais = [c for c in col_ordem if c in df_m.columns]
+                st.dataframe(df_m[cols_finais], use_container_width=True)
 
 elif menu == "🔧 Tabela Tempos":
     st.title("🔧 Configuração de Tempos")
     res = client.table("tabela_tempos").select("*").execute()
-    df_t = pd.DataFrame(res.data)
-    df_t_ed = st.data_editor(
-        df_t,
-        use_container_width=True,
-        num_rows="dynamic",
-        key="edit_tempos_db",
-    )
-    if st.button("💾 Atualizar Banco (Tempos)"):
-        dict_t = df_t_ed.to_dict(orient="records")
-        client.table("tabela_tempos").upsert(dict_t).execute()
-        st.success("Banco de Tempos Atualizado!")
+    df_t_ed = st.data_editor(pd.DataFrame(res.data), use_container_width=True, num_rows="dynamic")
+    if st.button("💾 Atualizar"):
+        client.table("tabela_tempos").upsert(df_t_ed.to_dict(orient="records")).execute()
+        st.success("Atualizado!")
 
 elif menu == "📐 Tabela Desenhos":
     st.title("📐 Configuração de Desenhos")
     res = client.table("tabela_desenhos").select("*").execute()
-    df_d = pd.DataFrame(res.data)
-    df_d_ed = st.data_editor(
-        df_d,
-        use_container_width=True,
-        num_rows="dynamic",
-        key="edit_desenhos_db",
-    )
-    if st.button("💾 Atualizar Banco (Desenhos)"):
-        dict_d = df_d_ed.to_dict(orient="records")
-        client.table("tabela_desenhos").upsert(dict_d).execute()
-        st.success("Banco de Desenhos Updated!")
+    df_d_ed = st.data_editor(pd.DataFrame(res.data), use_container_width=True, num_rows="dynamic")
+    if st.button("💾 Atualizar"):
+        client.table("tabela_desenhos").upsert(df_d_ed.to_dict(orient="records")).execute()
+        st.success("Atualizado!")
