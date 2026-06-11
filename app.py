@@ -120,7 +120,7 @@ if menu == "🚀 Sequenciamento":
                 dis_cols.append(c)
 
         ed_args = {}
-        ed_args["data_frame"] = ss["df_pcp"]
+        ed_args["data"] = ss["df_pcp"]
         ed_args["disabled"] = dis_cols
         ed_args["use_container_width"] = True
         ed_args["key"] = "editor_pcp"
@@ -129,46 +129,4 @@ if menu == "🚀 Sequenciamento":
         df_seq = df_editado.sort_values(by=["Ordem"]).copy()
         today = dt.date.today()
 
-        m_list = [
-            "Torno GL 170G - 1",
-            "Torno GL 170G - 2",
-            "Torno Centur - 1",
-            "Torno Centur - 2",
-        ]
-
-        agenda = {}
-        agenda["Torno GL 170G - 1"] = {"data": today, "ferramental": ""}
-        agenda["Torno GL 170G - 2"] = {"data": today, "ferramental": ""}
-        agenda["Torno Centur - 1"] = {"data": today, "ferramental": ""}
-        agenda["Torno Centur - 2"] = {"data": today, "ferramental": ""}
-
-        maq_aloc, d_ini, d_fim, st_ent, set_reais, h_tot = (
-            [],
-            [],
-            [],
-            [],
-            [],
-            [],
-        )
-        items = df_seq.to_dict("records")
-
-        for r in items:
-            fg = str(r["ferramental_grupo"])
-            is_gl = "8" in fg or "9" in fg
-            g_maq = "Torno GL 170G" if is_gl else "Torno Centur"
-            m1 = f"{g_maq} - 1"
-            m2 = f"{g_maq} - 2"
-
-            st_m1 = max(today, agenda[m1]["data"])
-            se_m1 = float(r["setup (min)"])
-            if agenda[m1]["ferramental"] == fg:
-                se_m1 = 0.0
-            t_u = r["tempo unitário (min)"]
-            mi_m1 = se_m1 + (t_u * r["quantidade"])
-            fi_m1 = fim_norm(st_m1, mi_m1)
-
-            st_m2 = max(today, agenda[m2]["data"])
-            se_m2 = float(r["setup (min)"])
-            if agenda[m2]["ferramental"] == fg:
-                se_m2 = 0.0
-            mi_m2 = se_m2 + (t_u * r["quantidade"])
+        m_list =
