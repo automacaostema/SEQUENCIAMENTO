@@ -5,13 +5,7 @@ import streamlit as st
 from supabase import create_client
 
 st.set_page_config(layout="wide", page_title="PCP Stema")
-
-# Estilo Industrial Minimalista
-st.markdown("""
-    <style>
-    .stMetric { background-color: #0E1117; padding: 15px; border-radius: 10px; border: 1px solid #333; }
-    </style>
-    """, unsafe_allow_html=True)
+st.title("🚀 PCP Stema")
 
 sec = st.secrets
 client = create_client(sec["SUPABASE_URL"], sec["SUPABASE_KEY"])
@@ -52,17 +46,15 @@ def calc_setup(cod, df_t, df_d):
 menu = st.sidebar.radio("Navegação", ["🚀 Sequenciamento", "🔧 Tabela Tempos", "📐 Tabela Desenhos"])
 
 if menu == "🚀 Sequenciamento":
-    st.title("🚀 PCP Stema")
-    
-    # Visores de KPI
+    # KPIs simples (sem CSS customizado)
     if "df_seq" in st.session_state:
         df_temp = st.session_state["df_seq"]
         c1, c2 = st.columns(2)
-        c1.metric("📦 Peças a Produzir", f"{int(df_temp['quantidade'].sum()):.0f}".replace(",", "."))
-        c2.metric("⏱️ Horas Totais", f"{df_temp['Total (Horas)'].sum():.2f}".replace(".", ",").replace(",", "."))
-        st.markdown("---")
+        c1.metric("Peças a Produzir", f"{int(df_temp['quantidade'].sum()):,}".replace(",", "."))
+        c2.metric("Horas Totais", f"{df_temp['Total (Horas)'].sum():.2f}".replace(".", ","))
+        st.divider()
 
-    up = st.file_uploader("📂 Upload Planilha", type=["xlsx", "csv"])
+    up = st.file_uploader("Upload Planilha", type=["xlsx", "csv"])
     if up:
         df_raw = pd.read_excel(up)
         df_raw.columns = [c.strip() for c in df_raw.columns]
@@ -99,20 +91,23 @@ if menu == "🚀 Sequenciamento":
 
         df_seq = pd.DataFrame(res_lista)
         st.session_state["df_seq"] = df_seq
-        
-        # Gráfico
+
+        # Gráfico Original (Stack Bar)
         st.write("## 📊 Ocupação Real")
         df_mes = df_seq.groupby(["Máquina"])["Total (Horas)"].sum().reset_index()
         df_mes["Saldo Disponível"] = (157.5 - df_mes["Total (Horas)"]).clip(lower=0)
         fig = px.bar(df_mes, x="Máquina", y=["Total (Horas)", "Saldo Disponível"], barmode="stack")
         st.plotly_chart(fig, use_container_width=True)
 
-        # Filas
+        # Filas com Abas (Original)
         st.write("## 🗓️ Filas de Trabalho")
+        abas = st.tabs(m_list)
         col_ordem = ["codigo interno", "n servico", "Status", "data de entrega", "Início", "Fim", "quantidade", "setup (min)", "Total (Horas)", "ferramental_grupo"]
-        for maq in m_list:
-            with st.expander(f"Fila: {maq}"):
-                df_m = df_seq[df_seq["Máquina"] == maq]
+        
+        for i, maq in enumerate(m_list):
+            with abas[i]:
+                df_m = df_seq[df_seq["Máquina"] == maq].copy()
+                if "tempo unitário (min)" in df_m.columns: df_m = df_m.drop(columns=["tempo unitário (min)"])
                 st.dataframe(df_m[[c for c in col_ordem if c in df_m.columns]], use_container_width=True)
 
 elif menu in ["🔧 Tabela Tempos", "📐 Tabela Desenhos"]:
