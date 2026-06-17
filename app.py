@@ -46,7 +46,6 @@ def calc_setup(cod, df_t, df_d):
 menu = st.sidebar.radio("Navegação", ["🚀 Sequenciamento", "🔧 Tabela Tempos", "📐 Tabela Desenhos"])
 
 if menu == "🚀 Sequenciamento":
-    # KPIs simples (sem CSS customizado)
     if "df_seq" in st.session_state:
         df_temp = st.session_state["df_seq"]
         c1, c2 = st.columns(2)
@@ -91,32 +90,20 @@ if menu == "🚀 Sequenciamento":
 
         df_seq = pd.DataFrame(res_lista)
         st.session_state["df_seq"] = df_seq
+        df_seq["Mês/Ano"] = pd.to_datetime(df_seq["Fim"]).dt.to_period("M").astype(str)
 
-        # Gráfico Original (Stack Bar)
+        # Gráfico Restaurado: Mês/Ano no eixo X
         st.write("## 📊 Ocupação Real")
-        df_mes = df_seq.groupby(["Máquina"])["Total (Horas)"].sum().reset_index()
+        df_mes = df_seq.groupby(["Mês/Ano", "Máquina"])["Total (Horas)"].sum().reset_index()
         df_mes["Saldo Disponível"] = (157.5 - df_mes["Total (Horas)"]).clip(lower=0)
-        fig = px.bar(df_mes, x="Máquina", y=["Total (Horas)", "Saldo Disponível"], barmode="stack")
+        
+        fig = px.bar(df_mes, x="Mês/Ano", y=["Total (Horas)", "Saldo Disponível"], 
+                     facet_col="Máquina", facet_col_wrap=2, barmode="stack")
         st.plotly_chart(fig, use_container_width=True)
 
-        # Filas com Abas (Original)
+        # Filas com Abas
         st.write("## 🗓️ Filas de Trabalho")
         abas = st.tabs(m_list)
         col_ordem = ["codigo interno", "n servico", "Status", "data de entrega", "Início", "Fim", "quantidade", "setup (min)", "Total (Horas)", "ferramental_grupo"]
         
-        for i, maq in enumerate(m_list):
-            with abas[i]:
-                df_m = df_seq[df_seq["Máquina"] == maq].copy()
-                if "tempo unitário (min)" in df_m.columns: df_m = df_m.drop(columns=["tempo unitário (min)"])
-                st.dataframe(df_m[[c for c in col_ordem if c in df_m.columns]], use_container_width=True)
-
-elif menu in ["🔧 Tabela Tempos", "📐 Tabela Desenhos"]:
-    tabela = "tabela_tempos" if menu == "🔧 Tabela Tempos" else "tabela_desenhos"
-    df = pd.DataFrame(client.table(tabela).select("*").execute().data)
-    df_edit = st.data_editor(df, num_rows="dynamic", use_container_width=True)
-    if st.button("💾 Salvar"):
-        if not df_edit.empty:
-            records = df_edit.replace({pd.NA: None, float('nan'): None}).to_dict(orient="records")
-            client.table(tabela).upsert(records).execute()
-            st.success("Salvo com sucesso!")
-            st.rerun()
+        for i, maq
