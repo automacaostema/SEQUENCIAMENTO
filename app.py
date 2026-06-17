@@ -4,7 +4,7 @@ import plotly.express as px
 import streamlit as st
 from supabase import create_client
 
-st.set_page_config(layout="wide", page_title="PCP Stema")
+st.set_page_config(layout="wide")
 st.title("🚀 PCP Stema")
 
 sec = st.secrets
@@ -45,12 +45,13 @@ def calc_setup(cod, df_t, df_d):
 # --- MENU ---
 menu = st.sidebar.radio("Navegação", ["🚀 Sequenciamento", "🔧 Tabela Tempos", "📐 Tabela Desenhos"])
 
+# --- LÓGICA DO PCP ---
 if menu == "🚀 Sequenciamento":
     if "df_seq" in st.session_state:
         df_temp = st.session_state["df_seq"]
         c1, c2 = st.columns(2)
-        c1.metric("Peças a Produzir", f"{int(df_temp['quantidade'].sum()):,}".replace(",", "."))
-        c2.metric("Horas Totais", f"{df_temp['Total (Horas)'].sum():.2f}".replace(".", ","))
+        c1.metric("📦 Peças a Produzir", f"{int(df_temp['quantidade'].sum()):,}")
+        c2.metric("⏱️ Horas Totais", f"{df_temp['Total (Horas)'].sum():.2f} h")
         st.divider()
 
     up = st.file_uploader("Upload Planilha", type=["xlsx", "csv"])
@@ -65,13 +66,16 @@ if menu == "🚀 Sequenciamento":
         res = [calc_setup(c, df_tempos, df_desenhos) for c in df_raw["codigo interno"]]
         df_raw["setup (min)"], df_raw["ferramental_grupo"] = zip(*res)
         df_raw = df_raw.sort_values(by=["data de entrega", "ferramental_grupo"]).copy()
+        df_raw["Ordem"] = range(1, len(df_raw) + 1)
+        
+        df_edit = st.data_editor(df_raw, disabled=[c for c in df_raw.columns if c != "Ordem"], use_container_width=True)
         
         today = dt.date.today()
         m_list = ["Torno GL 170G - 1", "Torno GL 170G - 2", "Torno Centur - 1", "Torno Centur - 2"]
         agenda = {m: {"data": today, "ferramental": ""} for m in m_list}
         
         res_lista = []
-        for r in df_raw.to_dict("records"):
+        for r in df_edit.to_dict("records"):
             fg = str(r["ferramental_grupo"])
             g_maq = "Torno GL 170G" if ("8" in fg or "9" in fg) else "Torno Centur"
             maqs = [f"{g_maq} - 1", f"{g_maq} - 2"]
@@ -92,18 +96,31 @@ if menu == "🚀 Sequenciamento":
         st.session_state["df_seq"] = df_seq
         df_seq["Mês/Ano"] = pd.to_datetime(df_seq["Fim"]).dt.to_period("M").astype(str)
 
-        # Gráfico Restaurado: Mês/Ano no eixo X
         st.write("## 📊 Ocupação Real")
         df_mes = df_seq.groupby(["Mês/Ano", "Máquina"])["Total (Horas)"].sum().reset_index()
         df_mes["Saldo Disponível"] = (157.5 - df_mes["Total (Horas)"]).clip(lower=0)
-        
         fig = px.bar(df_mes, x="Mês/Ano", y=["Total (Horas)", "Saldo Disponível"], 
-                     facet_col="Máquina", facet_col_wrap=2, barmode="stack")
+                     facet_col="Máquina", facet_col_wrap=2, barmode="stack", title="Horas Ocupadas vs. Disponíveis")
         st.plotly_chart(fig, use_container_width=True)
 
-        # Filas com Abas
         st.write("## 🗓️ Filas de Trabalho")
         abas = st.tabs(m_list)
         col_ordem = ["codigo interno", "n servico", "Status", "data de entrega", "Início", "Fim", "quantidade", "setup (min)", "Total (Horas)", "ferramental_grupo"]
-        
-        for i, maq
+        for i, maq in enumerate(m_list):
+            with abas[i]:
+                df_m = df_seq[df_seq["Máquina"] == maq].copy()
+                st.dataframe(df_m[[c for c in col_ordem if c in df_m.columns]], use_container_width=True)
+
+# --- TABELAS SEGURAS ---
+elif menu in ["🔧 Tabela Tempos", "📐 Tabela Desenhos"]:
+    tabela = "tabela_tempos" if menu == "🔧 Tabela Tempos" else "tabela_desenhos"
+    dados = client.table(tabela).select("*").execute().data
+    df_ed = st.data_editor(pd.DataFrame(dados), num_rows="dynamic", use_container_width=True)
+    if st.button("💾 Salvar"):
+        if not df_ed.empty:
+            records = df_ed.replace({pd.NA: None, float('nan'): None}).to_dict(orient="records")
+            for r in records: 
+                if "id" in r and r["id"] is None: del r["id"]
+            client.table(tabela).upsert(records).execute()
+            st.success("Dados salvos com segurança!")
+            st.rerun()
